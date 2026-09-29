@@ -1,0 +1,62 @@
+# Hifz Focus
+
+A Quran memorization site built around a fixed gaze. You look at one dot in the middle of the screen and keep your eyes still; the whole mushaf page moves underneath it in sync with the recitation, so the word (and, in glide mode, roughly the letter) being pronounced is always right at the dot. Over repeated passes you see the page's exact layout while hearing correct recitation.
+
+## What it uses
+
+- **Layout:** the 15-line King Fahd Madani mushaf, 1405 AH print (Hafs ʿan ʿĀṣim, 604 pages), from quran.com's `qdc` API with its "KFGQPC V1" layout (`mushaf=2`). This is the print where page 595 holds Ash-Shams and the first 5 lines of Al-Layl. The 1421 print (quran.com's V2/V4 and its tajweed view) breaks pages differently. Pages are shown one at a time as printed: running head, 15 lines justified to one width (only the lines the print centres at the end of Juz ʿAmma are centred), and the page number. The page turns when the recitation reaches the next page's first word.
+- **Script**, switched with *Tajweed colours* in Settings:
+  - on (default): the same pages and lines set from quran.com's tajweed-annotated Uthmani text (`text_uthmani_tajweed`) in the King Fahd Complex Uthmanic Hafs font, with each rule's letters coloured. The lettering is that font, not the exact print glyphs, and a few dense lines are set slightly smaller so every line stays the same length.
+  - off: the 1405 print's own per-page V1 glyph fonts, i.e. the exact printed calligraphy, which has no colours.
+- **Audio and sync:** per-surah recitations with word-level timestamps from `api.qurancdn.com` (the data behind quran.com's word highlighting). "Kids repeat" recitations are excluded because their timings repeat every word.
+
+Everything is fetched at runtime from those public endpoints, so the site needs an internet connection and has no backend.
+
+## Run it
+
+```sh
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # static site in dist/, host anywhere
+```
+
+## Using it
+
+- Pick a surah or page and a reciter, press **Space** (or ▶), and fix your eyes on the dot.
+- **Play** sets how far a session runs from the starting page (this page, 2 or 5 pages, to the end of the surah, or continuously); **Repeat** replays that range 1–20 times or forever.
+- **←** jumps to the start of the next ayah; **→** jumps back to the start of the current ayah, or to the previous ayah if you are already at (within a second of) its start. Both work while playing or paused and cross pages and surahs. **PageDown/PageUp** (or the ‹ › buttons next to the page number) turn pages. Click any word to start from it. **<** / **>** step the speed down/up through the Speed menu's values, as on YouTube. **+/−** zoom, **F** full screen.
+- **A-B loop:** press **A** to mark the current ayah as the loop start and **B** to mark the loop end (pressing the key again on the same ayah removes that point), or **Shift+click** / **Alt(Option)+click** any word to set A / B at its ayah. The A and B chips in the bottom bar show the points; their ‹ › buttons move a point one ayah later/earlier and × removes it; **C** clears both. With both set, playback runs from the start of A to the end of B and **Repeat** counts loops (the Play range is disabled meanwhile). Small A and B tags mark the loop's first word and last ayah number on the page.
+- **Zoom** at its minimum keeps the entire page on screen wherever the dot is on it, so you always see the whole page you are memorizing. Zooming in makes the text larger, but the edges of the page can then go off screen.
+- Choosing a surah rests the dot on its first word (with the basmala read first), even when it starts part-way down a page; repeats go back to where you started, not to the top of the page.
+- **Settings:** letter-glide vs word-step tracking, motion smoothing, dot above or on the letter, theme, tajweed colours on/off, current-word highlight, edge dimming, auto-hiding controls.
+- **Tajweed colours** opens the colour key for the rules the font marks.
+
+The fonts draw each word as a single glyph, so "letter" tracking is interpolated: within each word's timestamp the focus slides from its right edge to its left edge at a constant rate. It follows pronunciation closely but it isn't timed per letter.
+
+## Reciting from memory
+
+Press **P** (or **🎙 Recite**) and recite aloud from the ayah under the dot, or the A-B loop if one is set. The page follows your voice: words you haven't recited yet are hidden (their places stay, so the page keeps its shape), each word appears as you say it, and the dot sits where the next word belongs. The page turns when you reach the next one.
+
+- A word you skip is revealed in red with "Skipped: …"; a word you say differently is revealed with "Check: …", with a soft tone (Settings can turn the tone off). A taʿawwudh or basmala said before you begin, and going back to repeat the last few words, are not counted as mistakes.
+- **H** reveals the next word if you're stuck, **→** recites the current ayah again (or the previous one if you're at its start), **←** skips to the next ayah, clicking a word restarts from its ayah, **Space** pauses listening, **Esc** leaves. At the end of the loop (or the Quran) you get a summary of mistakes and hints.
+- Settings can show upcoming words faintly instead of hiding them.
+
+Limits worth knowing: this uses the browser's speech recognition in Arabic (Chrome and Edge send audio to Google's speech service, Safari uses Apple's; Firefox has none), so it needs a microphone and a connection. It checks **words** — skipped, swapped or different words — not **tajweed** (a short madd or missing ghunnah still sounds like the right word), and the recogniser can mishear, so treat a flag as "check this word" rather than a verdict. Words must match exactly up to 7 letters, since one letter is often the whole difference (لليسرى / للعسرى).
+
+If reciting doesn't respond, read the status line at the bottom right:
+
+- **"Heard: …"** shows what the recogniser understood. If words appear there but the page doesn't follow, the words aren't matching the ayah you started from.
+- **"Not hearing anything"** means the microphone is open but silent: check the input device in System Settings › Sound › Input and the browser's site settings.
+- **"The speech-recognition service could not be reached"** or **"keeps stopping right after it starts"** means the browser's recogniser isn't working. Chromium browsers other than Google Chrome and Edge (Brave, Arc, Vivaldi, Opera…) typically lack the speech service; use Chrome, Edge or Safari. The app gives up after three failed starts rather than switching the microphone on and off.
+
+## Code map
+
+- `src/api.ts` — quran.com / qurancdn endpoints and types.
+- `src/fonts.ts` — loads the V1 page fonts (exact print) or the Uthmanic Hafs font (tajweed text).
+- `src/mushaf.ts` — builds a page's 15 lines (surah titles, basmala, tajweed-coloured words), fits them to one width and measures word boxes.
+- `src/timeline.ts` — turns word timestamps into focus keyframes and samples them.
+- `src/engine.ts` — audio, page flips, surah transitions, range/repeat.
+- `src/main.ts` — controls, settings (saved in `localStorage`), per-frame rendering.
+- `src/recite.ts` — normalises Arabic and aligns what the recogniser heard with the expected words.
+- `src/listener.ts` — the browser speech-recognition session, restarted as needed.
+- `src/practice.ts` — reciting mode: follows the voice, hides upcoming words, reports mistakes.

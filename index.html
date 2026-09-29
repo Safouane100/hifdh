@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Memorize the Quran by fixing your gaze on one point while the Madani mushaf page moves under it in sync with the recitation." />
+    <title>Hifz Focus — Quran memorization with a fixed gaze</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="viewport" aria-label="Mushaf page">
+      <div id="pager"></div>
+      <div id="vignette" aria-hidden="true"></div>
+      <div id="dot" aria-hidden="true"></div>
+      <div id="flash" aria-live="polite"></div>
+      <div id="hint" role="note">
+        <p class="hint-title">Fix your eyes on the dot</p>
+        <p>Keep your gaze still. The page moves so the word being recited always passes under the dot.</p>
+        <p class="hint-keys"><kbd>Space</kbd> play / pause · <kbd>←</kbd> next ayah · <kbd>→</kbd> start of ayah / previous ayah · <kbd>&lt;</kbd> <kbd>&gt;</kbd> slower / faster · <kbd>PgDn</kbd> <kbd>PgUp</kbd> turn page · <kbd>+</kbd> <kbd>−</kbd> zoom · click a word to start there</p>
+        <p class="hint-keys">Loop: <kbd>A</kbd> / <kbd>B</kbd> set the loop start / end at the current ayah (press again to remove) · <kbd>Shift</kbd>+click a word sets A, <kbd>Alt</kbd>+click sets B · <kbd>C</kbd> clears the loop</p>
+        <p class="hint-keys">Recite from memory: <kbd>P</kbd> starts listening from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · <kbd>H</kbd> shows the next word · <kbd>→</kbd> recite this ayah again · <kbd>Space</kbd> pause · <kbd>Esc</kbd> stop</p>
+      </div>
+    </main>
+
+    <header id="topbar" class="bar">
+      <div class="brand">Hifz Focus</div>
+      <label class="field">
+        <span class="sr-only">Surah</span>
+        <select id="surah" aria-label="Surah"></select>
+      </label>
+      <div class="field pagenav">
+        <button id="next-page" class="icon" title="Next page (PageDown)" aria-label="Next page">‹</button>
+        <label>
+          <span>Page</span>
+          <input id="page" type="number" min="1" max="604" inputmode="numeric" aria-label="Page number" />
+        </label>
+        <button id="prev-page" class="icon" title="Previous page (PageUp)" aria-label="Previous page">›</button>
+      </div>
+      <div id="where" class="where" aria-live="polite"></div>
+      <label class="field">
+        <span class="sr-only">Reciter</span>
+        <select id="reciter" aria-label="Reciter"></select>
+      </label>
+    </header>
+
+    <footer id="bottombar" class="bar">
+      <button id="play" class="play" aria-label="Play">▶</button>
+      <button id="practice" class="text recite" title="Recite from memory: the page follows your voice and hides what comes next (P)">🎙 Recite</button>
+      <label class="field">
+        <span>Play</span>
+        <select id="range">
+          <option value="page">this page</option>
+          <option value="pages2">2 pages</option>
+          <option value="pages5">5 pages</option>
+          <option value="surah">to end of surah</option>
+          <option value="continuous">continuously</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Repeat</span>
+        <select id="repeat">
+          <option value="1">once</option>
+          <option value="3">3×</option>
+          <option value="5">5×</option>
+          <option value="10">10×</option>
+          <option value="20">20×</option>
+          <option value="0">∞</option>
+        </select>
+      </label>
+      <span id="pass" class="pass"></span>
+      <div class="loop" role="group" aria-label="A-B loop">
+        <div class="loop-point" data-point="a">
+          <button class="set" title="Loop start: set at the current ayah (A). Again on the same ayah removes it.">A</button>
+          <span class="edit">
+            <button class="nudge" data-dir="1" title="Move A one ayah later">‹</button>
+            <span class="at"></span>
+            <button class="nudge" data-dir="-1" title="Move A one ayah earlier">›</button>
+            <button class="clear" title="Remove A">×</button>
+          </span>
+        </div>
+        <div class="loop-point" data-point="b">
+          <button class="set" title="Loop end: set at the current ayah (B). Again on the same ayah removes it.">B</button>
+          <span class="edit">
+            <button class="nudge" data-dir="1" title="Move B one ayah later">‹</button>
+            <span class="at"></span>
+            <button class="nudge" data-dir="-1" title="Move B one ayah earlier">›</button>
+            <button class="clear" title="Remove B">×</button>
+          </span>
+        </div>
+      </div>
+      <label class="field">
+        <span>Speed</span>
+        <select id="rate">
+          <option value="0.5">0.5×</option>
+          <option value="0.75">0.75×</option>
+          <option value="0.9">0.9×</option>
+          <option value="1">1×</option>
+          <option value="1.15">1.15×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+        </select>
+      </label>
+      <label class="field zoom">
+        <span>Zoom</span>
+        <input id="zoom" type="range" min="1" max="5" step="0.05" title="Leftmost: the whole page always stays on screen" />
+      </label>
+      <span id="status" class="status" aria-live="polite"></span>
+      <button id="toggle-legend" class="text">Tajweed colours</button>
+      <button id="toggle-settings" class="text">Settings</button>
+    </footer>
+
+    <aside id="settings" class="panel" hidden>
+      <h2>Settings</h2>
+      <label class="row">
+        <span>Tracking</span>
+        <select id="mode">
+          <option value="glide">Letter glide — slide through each word as it is pronounced</option>
+          <option value="word">Word steps — rest on each word, then move</option>
+        </select>
+      </label>
+      <label class="row">
+        <span>Motion smoothing</span>
+        <input id="smoothing" type="range" min="0" max="300" step="10" />
+        <output id="smoothing-out"></output>
+      </label>
+      <label class="row">
+        <span>Dot position</span>
+        <select id="dot-place">
+          <option value="above">Just above the letter (text stays unobstructed)</option>
+          <option value="on">On the letter (translucent ring)</option>
+        </select>
+      </label>
+      <label class="row">
+        <span>Theme</span>
+        <select id="theme">
+          <option value="light">Light</option>
+          <option value="sepia">Sepia</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <label class="row check">
+        <input id="tajweed" type="checkbox" />
+        <span>Tajweed colours <small>(off: exact print calligraphy, uncoloured)</small></span>
+      </label>
+      <label class="row check">
+        <input id="highlight" type="checkbox" />
+        <span>Highlight the word being recited</span>
+      </label>
+      <label class="row check">
+        <input id="vignette-on" type="checkbox" />
+        <span>Dim the edges of the page</span>
+      </label>
+      <label class="row check">
+        <input id="autohide" type="checkbox" />
+        <span>Hide controls while playing</span>
+      </label>
+      <label class="row check">
+        <input id="beep" type="checkbox" />
+        <span>Reciting: play a soft tone when a mistake is heard</span>
+      </label>
+      <label class="row check">
+        <input id="peek" type="checkbox" />
+        <span>Reciting: show upcoming words faintly instead of hiding them</span>
+      </label>
+    </aside>
+
+    <aside id="legend" class="panel" hidden>
+      <h2>Tajweed colour key</h2>
+      <ul id="legend-list"></ul>
+      <p id="legend-note" class="note"></p>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
