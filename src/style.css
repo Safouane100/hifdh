@@ -1,0 +1,615 @@
+:root {
+  --bg: #ebe7dc;
+  --sheet: #fffdf7;
+  --sheet-edge: rgba(138, 109, 47, 0.28);
+  --ink: #111;
+  --muted: #6b6b6b;
+  --bar: rgba(253, 252, 248, 0.92);
+  --line: rgba(0, 0, 0, 0.12);
+  --accent: #0f766e;
+  --dot: #e11d48;
+  --hl: rgba(15, 118, 110, 0.14);
+  --frame: #8a6d2f;
+  --tj-silent: #a5a5a5;
+  --tj-lazim: #b50000;
+  --tj-wajib: #f40000;
+  --tj-jaiz: #ff7b00;
+  --tj-tabii: #ce9e00;
+  --tj-ghunnah: #09b000;
+  --tj-qalqalah: #2fadff;
+  --mistake: #dc2626;
+  color-scheme: light;
+}
+[data-theme='sepia'] {
+  --bg: #e2d7bd;
+  --sheet: #f6eedb;
+  --sheet-edge: rgba(138, 90, 18, 0.3);
+  --ink: #2b2118;
+  --muted: #7a6a55;
+  --bar: rgba(244, 236, 216, 0.93);
+  --line: rgba(60, 40, 10, 0.16);
+  --accent: #8a5a12;
+  --hl: rgba(138, 90, 18, 0.16);
+  --frame: #8a5a12;
+  --tj-silent: #a39a8e;
+  --tj-lazim: #b7001c;
+  --tj-wajib: #e00000;
+  --tj-jaiz: #e67b00;
+  --tj-tabii: #b08620;
+  --tj-ghunnah: #178a00;
+  --tj-qalqalah: #0096c7;
+}
+[data-theme='dark'] {
+  --bg: #08090a;
+  --sheet: #15171a;
+  --sheet-edge: rgba(199, 164, 90, 0.25);
+  --ink: #f1f1f1;
+  --muted: #9aa0a6;
+  --bar: rgba(22, 24, 27, 0.92);
+  --line: rgba(255, 255, 255, 0.12);
+  --accent: #5eead4;
+  --dot: #fb7185;
+  --hl: rgba(94, 234, 212, 0.16);
+  --frame: #c7a45a;
+  --tj-silent: #8f8a8a;
+  --tj-lazim: #ff4d4d;
+  --tj-wajib: #ff6b8e;
+  --tj-jaiz: #ff9a4d;
+  --tj-tabii: #e6c35c;
+  --tj-ghunnah: #3ccf6e;
+  --tj-qalqalah: #33d6ff;
+  --mistake: #f87171;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* --- Stage ------------------------------------------------------------- */
+
+#viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+#pager {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+/*
+ * One printed page: running head, a fixed 15-line text block where every line
+ * has the same width, and the page number. Sizes are in em of the 32px page
+ * font; main.ts reads the rendered size to fit the page on screen.
+ */
+.mushaf-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  direction: rtl;
+  font-size: 32px;
+  line-height: 1;
+  padding: 0.5em 0.9em 0.45em;
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--sheet-edge);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 10px 40px rgba(0, 0, 0, 0.08);
+  animation: page-turn 0.45s ease-out;
+}
+.mushaf-page.preload {
+  visibility: hidden;
+  animation: none;
+}
+/* Arabic books turn right-to-left: the next page arrives from the left. */
+@keyframes page-turn {
+  from {
+    opacity: 0;
+    transform: translateX(-6%);
+  }
+}
+.page-head,
+.page-foot {
+  font-family: 'Amiri', serif;
+  font-size: 0.5em;
+  color: var(--muted);
+}
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 0.3em 0.5em;
+  border-bottom: 1px solid var(--sheet-edge);
+  margin-bottom: 0.2em;
+}
+.page-foot {
+  text-align: center;
+  padding-top: 0.4em;
+  border-top: 1px solid var(--sheet-edge);
+  margin-top: 0.2em;
+}
+/*
+ * 15.3em fits the widest line of the 1405 page glyphs (484px at 32px). The
+ * Unicode tajweed text runs wider, so it is set at 0.89em, where a typical
+ * (90th percentile) line fills the block; wider lines are shrunk in fitLines().
+ */
+.page-lines {
+  display: flex;
+  flex-direction: column;
+  width: 15.3em;
+  height: calc(15 * 1.85em);
+}
+.page-lines.opening {
+  justify-content: center;
+}
+.script-tajweed .line > span {
+  font-size: 0.89em;
+}
+/* The 1405 basmala glyphs come from page 1, where they are set small. */
+.script-print .basmala > span {
+  font-size: 1.3em;
+}
+.line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 1.85em;
+  flex: none;
+  white-space: nowrap;
+}
+.line.centered {
+  justify-content: center;
+}
+.w {
+  position: relative;
+  cursor: pointer;
+  border-radius: 0.25em;
+  transition: background-color 0.12s;
+}
+.tj-silent { color: var(--tj-silent); }
+.tj-lazim { color: var(--tj-lazim); }
+.tj-wajib { color: var(--tj-wajib); }
+.tj-jaiz { color: var(--tj-jaiz); }
+.tj-tabii { color: var(--tj-tabii); }
+.tj-ghunnah { color: var(--tj-ghunnah); }
+.tj-qalqalah { color: var(--tj-qalqalah); }
+.show-highlight .w.active {
+  background: var(--hl);
+}
+/*
+ * Reciting from memory: words not yet recited keep their place but are hidden
+ * (or faint with "peek"), so the page keeps its shape. Ayah numbers stay.
+ */
+.practicing .w:not(.end):not(.said) {
+  visibility: hidden;
+}
+.peek-ahead .practicing .w:not(.end):not(.said) {
+  visibility: visible;
+  opacity: 0.12;
+}
+.practicing .w.rec-hint {
+  visibility: visible;
+  opacity: 0.45;
+}
+.w.rec-missed,
+.w.rec-wrong {
+  background: color-mix(in srgb, var(--mistake) 16%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mistake) 45%, transparent);
+}
+.script-print .w.rec-missed,
+.script-print .w.rec-wrong {
+  color: var(--mistake);
+}
+.reciting .recite {
+  color: var(--sheet);
+  background: var(--mistake);
+  border-color: transparent;
+}
+/* A-B loop: small A / B tags on the loop's first word and last ayah number. */
+.w.loop-a::before,
+.w.loop-b::after {
+  position: absolute;
+  top: -0.15em;
+  padding: 0 0.25em;
+  border-radius: 0.3em;
+  font: 700 0.32em/1.4 system-ui, sans-serif;
+  color: var(--sheet);
+  background: var(--accent);
+  pointer-events: none;
+}
+.w.loop-a::before {
+  content: 'A';
+  right: -0.2em;
+}
+.w.loop-b::after {
+  content: 'B';
+  left: -0.2em;
+}
+.surah-title .surah-frame {
+  width: 100%;
+  margin: 0 0.4em;
+  padding: 0.05em 0;
+  text-align: center;
+  font-family: 'Amiri', serif;
+  font-size: 0.85em;
+  line-height: 1.5;
+  border: 3px double var(--frame);
+  border-radius: 0.4em;
+  background: color-mix(in srgb, var(--frame) 8%, transparent);
+}
+
+/* Speed readout: above the dot so it never covers the text being read. */
+#flash {
+  position: absolute;
+  left: 50%;
+  top: 28%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font: 600 18px system-ui, sans-serif;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  z-index: 4;
+}
+#flash.show {
+  opacity: 1;
+  transition: none;
+}
+#dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 25%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+[data-dot='on'] #dot {
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  background: transparent;
+  border: 2px solid color-mix(in srgb, var(--dot) 70%, transparent);
+  box-shadow: none;
+}
+#vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(
+    ellipse 60% 55% at 50% 50%,
+    transparent 45%,
+    color-mix(in srgb, var(--bg) 70%, transparent) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.vignette #vignette {
+  opacity: 1;
+}
+
+#hint {
+  position: absolute;
+  left: 50%;
+  /* At rest the dot is on the page's first word, so the page hangs below it. */
+  top: 70px;
+  transform: translateX(-50%);
+  max-width: min(560px, 92vw);
+  padding: 14px 18px;
+  text-align: center;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  z-index: 4;
+  transition: opacity 0.3s;
+}
+#hint p {
+  margin: 4px 0;
+}
+.hint-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+.hint-keys {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+kbd {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: 12px ui-monospace, monospace;
+}
+.playing #hint,
+.played #hint,
+.reciting #hint {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --- Controls ---------------------------------------------------------- */
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 8px 14px;
+  background: var(--bar);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+  transition: opacity 0.35s, transform 0.35s;
+}
+#topbar {
+  top: 0;
+  border-bottom: 1px solid var(--line);
+}
+#bottombar {
+  bottom: 0;
+  border-top: 1px solid var(--line);
+}
+.immersive .bar,
+.immersive .panel {
+  opacity: 0;
+  pointer-events: none;
+}
+.immersive #topbar {
+  transform: translateY(-100%);
+}
+.immersive #bottombar {
+  transform: translateY(100%);
+}
+.immersive,
+.immersive * {
+  cursor: none !important;
+}
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.field label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+select,
+input[type='number'] {
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+}
+select option {
+  background: var(--bg);
+}
+#surah {
+  max-width: 260px;
+}
+#reciter {
+  max-width: 280px;
+}
+#page {
+  width: 64px;
+  text-align: center;
+}
+.where {
+  flex: 1;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+button {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+button:hover {
+  border-color: var(--accent);
+}
+button.icon {
+  padding: 2px 10px;
+  font-size: 18px;
+  line-height: 1.2;
+}
+button.play {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 18px;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+}
+button.text {
+  color: var(--ink);
+}
+.loop {
+  display: inline-flex;
+  gap: 6px;
+}
+.loop-point {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.loop-point button {
+  border: none;
+  border-radius: 0;
+  padding: 4px 8px;
+}
+.loop-point .set {
+  font-weight: 700;
+  color: var(--muted);
+}
+.loop-point.is-set .set {
+  color: var(--sheet);
+  background: var(--accent);
+  border-radius: 5px 0 0 5px;
+}
+.loop-point .edit {
+  display: none;
+  align-items: center;
+}
+.loop-point.is-set .edit {
+  display: inline-flex;
+}
+.loop-point .at {
+  min-width: 70px;
+  padding: 0 2px;
+  text-align: center;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.loop-point .clear {
+  color: var(--muted);
+}
+select:disabled {
+  opacity: 0.45;
+}
+.pass {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  min-width: 70px;
+}
+.status {
+  flex: 1;
+  color: var(--muted);
+  text-align: right;
+}
+.status.error {
+  color: #dc2626;
+}
+.zoom input {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.panel {
+  position: fixed;
+  right: 14px;
+  bottom: 76px;
+  width: min(420px, calc(100vw - 28px));
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+  padding: 14px 16px;
+  background: var(--bar);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  z-index: 6;
+}
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.panel .row {
+  display: grid;
+  grid-template-columns: 130px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.panel .row select {
+  width: 100%;
+}
+.panel .row.check {
+  grid-template-columns: auto 1fr;
+}
+.panel input[type='range'],
+.panel input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+#legend ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#legend li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+#legend li:last-child {
+  border-bottom: none;
+}
+.swatch {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 4px;
+}
+.rule-name {
+  font-weight: 600;
+}
+.rule-desc {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .brand,
+  .where {
+    display: none;
+  }
+  .bar {
+    gap: 6px 10px;
+    padding: 6px 10px;
+  }
+  .zoom input {
+    width: 80px;
+  }
+}
