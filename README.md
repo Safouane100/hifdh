@@ -6,7 +6,7 @@ A Quran memorization site built around a fixed gaze. You look at one dot in the 
 
 - **Layout:** the 15-line King Fahd Madani mushaf, 1405 AH print (Hafs ʿan ʿĀṣim, 604 pages), from quran.com's `qdc` API with its "KFGQPC V1" layout (`mushaf=2`). This is the print where page 595 holds Ash-Shams and the first 5 lines of Al-Layl. The 1421 print (quran.com's V2/V4 and its tajweed view) breaks pages differently. Pages are shown one at a time as printed: running head, 15 lines justified to one width (only the lines the print centres at the end of Juz ʿAmma are centred), and the page number. The page turns when the recitation reaches the next page's first word.
 - **Script**, switched with *Tajweed colours* in Settings:
-  - on (default): the same pages and lines set from quran.com's tajweed-annotated Uthmani text (`text_uthmani_tajweed`) in the King Fahd Complex Uthmanic Hafs font, with each rule's letters coloured. The lettering is that font, not the exact print glyphs, and a few dense lines are set slightly smaller so every line stays the same length.
+  - on (default): the same pages and lines drawn exactly the way quran.com draws its tajweed view: each word is its glyph from the King Fahd Complex **QCF V4** tajweed font of its page in the 1421 print (`code_v2`, mushaf 19), with the tajweed colours built into the glyph, themed with the font's own palettes, as the [Quran Foundation font-rendering guide](https://api-docs.quran.foundation/docs/tutorials/fonts/font-rendering/) describes. So the lettering is quran.com's (1421-print calligraphy) laid on your 1405 lines; every 1405 word is within one page of its place in the 1421 print, which the app relies on to find it. Verse numbers are drawn in Uthmanic Hafs, as the guide advises.
   - off: the 1405 print's own per-page V1 glyph fonts, i.e. the exact printed calligraphy, which has no colours.
 - **Audio and sync:** per-surah recitations with word-level timestamps from `api.qurancdn.com` (the data behind quran.com's word highlighting). "Kids repeat" recitations are excluded because their timings repeat every word.
 
@@ -18,6 +18,7 @@ Everything is fetched at runtime from those public endpoints, so the site needs 
 npm install
 npm run dev        # http://localhost:5173
 npm run build      # static site in dist/, host anywhere
+npm test           # tajweed colouring specs
 ```
 
 ## Using it
@@ -29,7 +30,7 @@ npm run build      # static site in dist/, host anywhere
 - **Zoom** at its minimum keeps the entire page on screen wherever the dot is on it, so you always see the whole page you are memorizing. Zooming in makes the text larger, but the edges of the page can then go off screen.
 - Choosing a surah rests the dot on its first word (with the basmala read first), even when it starts part-way down a page; repeats go back to where you started, not to the top of the page.
 - **Settings:** letter-glide vs word-step tracking, motion smoothing, dot above or on the letter, theme, tajweed colours on/off, current-word highlight, edge dimming, auto-hiding controls.
-- **Tajweed colours** opens the colour key for the rules the font marks.
+- **Tajweed colours** opens the colour key. The colours are quran.com's, but printed tajweed mushafs don't share one colour scheme: this app shows madd munfaṣil in pink (quran.com's font draws it red, like muttaṣil), and you can click any rule's colour to change it to match your mushaf; your colours are saved and apply in every theme (except Firefox's dark mode, which uses fixed-colour fonts), and **Reset colours** restores the defaults.
 
 The fonts draw each word as a single glyph, so "letter" tracking is interpolated: within each word's timestamp the focus slides from its right edge to its left edge at a constant rate. It follows pronunciation closely but it isn't timed per letter.
 
@@ -52,8 +53,9 @@ If reciting doesn't respond, read the status line at the bottom right:
 ## Code map
 
 - `src/api.ts` — quran.com / qurancdn endpoints and types.
-- `src/fonts.ts` — loads the V1 page fonts (exact print) or the Uthmanic Hafs font (tajweed text).
-- `src/mushaf.ts` — builds a page's 15 lines (surah titles, basmala, tajweed-coloured words), fits them to one width and measures word boxes.
+- `src/fonts.ts` — loads the V1 page fonts (exact print), the V4 tajweed page fonts (colour mode; OT-SVG dark build in Firefox's dark mode) and Uthmanic Hafs (verse numbers), and keeps the V4 palette rules current.
+- `src/mushaf.ts` — builds a page's 15 lines (surah titles, basmala, words), fits them to one width and measures word boxes.
+- `src/tajweed.ts` — tajweed colours as quran.com draws them: the V4 fonts' palettes per theme, the palette slot each rule uses, the pink munfaṣil palette and your own colours as `@font-palette-values` overrides. `src/tajweed.test.ts` specifies it (and the V4 glyph lookup in `api.ts`) with one case per colouring problem reported (munfaṣil pink; the reported ikhfāʾ / iqlāb words drawn with quran.com's own glyphs). Add a case there for any new colouring report before fixing it.
 - `src/timeline.ts` — turns word timestamps into focus keyframes and samples them.
 - `src/engine.ts` — audio, page flips, surah transitions, range/repeat.
 - `src/main.ts` — controls, settings (saved in `localStorage`), per-frame rendering.
