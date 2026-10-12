@@ -73,6 +73,13 @@ const verseEndOrder = (verseKey: string) => orderOfKey(`${verseKey}:999`);
 const AT_START_MS = 1000;
 const SEEK_SLOP_MS = 80;
 
+/** Where one pass of playback runs: pages `start`–`end`, and if set, only up to the end of ayah `stopAfter`. */
+interface PassRange {
+  start: number;
+  end: number;
+  stopAfter?: string;
+}
+
 export class Engine {
   readonly audio = new Audio();
   page?: MushafPage;
@@ -80,7 +87,7 @@ export class Engine {
   private words: TimedWord[] = [];
   private keyframes: Keyframe[] = [];
   private restingKey?: string;
-  private range = { start: 1, end: 1 };
+  private range: PassRange = { start: 1, end: 1 };
   private sessionStart: { page: number; wordKey?: string } = { page: 1 };
   private passesDone = 0;
   private token = 0;
@@ -298,9 +305,10 @@ export class Engine {
       if (word) {
         if (this.playing && !this.advancing) {
           const order = orderOfKey(word.key);
-          const loop = this.activeLoop();
-          // The first word after B has started: go back to A.
-          if (loop && order > verseEndOrder(loop.b.verseKey)) void this.exclusive(() => this.finishPass());
+          // The first word after the pass's last ayah (loop B, or the surah's
+          // last ayah) has started: the pass is over.
+          const stop = this.range.stopAfter;
+          if (stop && order > verseEndOrder(stop)) void this.exclusive(() => this.finishPass());
           else if (order > page.lastOrder) void this.exclusive(() => this.advancePage());
         }
         if (t <= word.end && page.words.has(word.key)) {
@@ -318,20 +326,24 @@ export class Engine {
 
   // ----------------------------------------------------------------------------
 
-  private computeRange(startPage: number, wordKey?: string): { start: number; end: number } {
+  private computeRange(startPage: number, wordKey?: string): PassRange {
     // An A-B loop decides where a pass ends; pages may turn freely until then.
     const loop = this.activeLoop();
-    if (loop) return { start: loop.a.page, end: PAGE_COUNT };
+    if (loop) return { start: loop.a.page, end: PAGE_COUNT, stopAfter: loop.b.verseKey };
     // "To end of surah" means the surah being started: the given word's, else the
-    // page's first word's (the first surah covering the page).
+    // page's first word's (the first surah covering the page). It ends after the
+    // surah's last ayah, not its last page, which the next surah often shares.
     const chapter = wordKey
       ? this.chapters[Number(wordKey.split(':')[0]) - 1]
       : this.chapters.find((c) => c.pages[0] <= startPage && startPage <= c.pages[1]);
+    if (this.opts.range === 'surah' && chapter) {
+      return { start: startPage, end: PAGE_COUNT, stopAfter: `${chapter.id}:${chapter.verses_count}` };
+    }
     const end = {
       page: startPage,
       pages2: startPage + 1,
       pages5: startPage + 4,
-      surah: Math.max(startPage, chapter?.pages[1] ?? startPage),
+      surah: startPage,
       continuous: PAGE_COUNT,
     }[this.opts.range];
     return { start: startPage, end: Math.min(end, PAGE_COUNT) };
@@ -533,9 +545,9 @@ export class Engine {
     const current = this.chapterAudio?.data.chapter;
     if (!current || !this.page) return;
     const next = this.chapters[current]; // chapters[] is 0-based, so this is surah current+1
-    const loop = this.activeLoop();
-    const loopEndsInThisSurah = loop && Number(loop.b.verseKey.split(':')[0]) <= current;
-    if (!next || loopEndsInThisSurah || next.pages[0] > this.range.end) {
+    const stop = this.range.stopAfter;
+    const stopsInThisSurah = stop !== undefined && Number(stop.split(':')[0]) <= current;
+    if (!next || stopsInThisSurah || next.pages[0] > this.range.end) {
       await this.finishPass();
       return;
     }
