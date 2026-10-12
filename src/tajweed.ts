@@ -1,0 +1,84 @@
+// Tajweed colours, the way quran.com draws them: each word is a glyph from the
+// King Fahd Complex's QCF V4 tajweed font for its page (1421 print), whose
+// colours are built into the glyph as layers that each use a slot of the font's
+// colour palette (CPAL). Themes pick one of the font's own palettes; a reader's
+// own colours override slots with CSS `@font-palette-values override-colors`.
+// See https://api-docs.quran.foundation/docs/tutorials/fonts/font-rendering/
+// Pure data and string building, so it can be specified without a browser.
+
+export type Theme = 'light' | 'sepia' | 'dark';
+
+/** The font's built-in palette for each theme. */
+export const BASE_PALETTE: Record<Theme, number> = { light: 0, dark: 1, sepia: 2 };
+
+/** The 16 palette slots of every V4 page font, per theme (read from the fonts' CPAL table). */
+const PALETTES: Record<Theme, string[]> = {
+  light: ['#000000', '#a5a5a5', '#a3a5a5', '#b50000', '#ff7b00', '#ce9e00', '#09b000', '#3f48e6',
+    '#2fadff', '#f40000', '#2ca4ab', '#ff0080', '#d8e9d8', '#000000', '#040000', '#9fa5a5'],
+  dark: ['#ffffff', '#9d9999', '#999999', '#e30000', '#ff8e3b', '#ffc1e0', '#26b55d', '#3c84d5',
+    '#00deff', '#ff5e8e', '#009b68', '#aa8a1c', '#2e544f', '#ffffff', '#fbffff', '#919999'],
+  sepia: ['#000000', '#afabab', '#ababab', '#b7001c', '#e67b00', '#c09725', '#09b000', '#134fe1',
+    '#00b4e0', '#ff0000', '#d52b5e', '#56a977', '#ffffff', '#6c0000', '#000009', '#a6abab'],
+};
+
+export type Rule = 'lazim' | 'wajib' | 'munfasil' | 'jaiz' | 'tabii' | 'ghunnah' | 'qalqalah' | 'tafkhim' | 'silent';
+
+/** Palette slots each rule's letters are drawn with. */
+const RULE_SLOTS: Record<Exclude<Rule, 'munfasil'>, number[]> = {
+  silent: [1, 2, 15],
+  lazim: [3],
+  jaiz: [4],
+  tabii: [5],
+  ghunnah: [6],
+  tafkhim: [7],
+  qalqalah: [8],
+  wajib: [9],
+};
+
+/**
+ * The font draws madd munfaṣil and madd muttaṣil with the same slot (red).
+ * Colour-coded mushafs often give munfaṣil its own colour, so a word with a
+ * munfaṣil madd gets its own palette in which that slot is the munfaṣil colour.
+ * (A munfaṣil sits at a word's end before a hamza in the next word, so it and a
+ * muttaṣil practically never share a word.)
+ */
+const MUNFASIL_SLOT = 9;
+const MUNFASIL_DEFAULT: Record<Theme, string> = { light: '#e8559b', dark: '#ff8cc6', sepia: '#d64b8c' };
+
+/** The colour a rule is drawn in: the reader's own colour, else the theme's. */
+export function ruleColour(theme: Theme, rule: Rule, custom: Partial<Record<Rule, string>> = {}): string {
+  const own = custom[rule];
+  if (own) return own;
+  if (rule === 'munfasil') return MUNFASIL_DEFAULT[theme];
+  return PALETTES[theme][RULE_SLOTS[rule][0]];
+}
+
+/** Whether a word's tajweed markup (`text_uthmani_tajweed`) contains a madd munfaṣil. */
+export function hasMunfasil(markup: string): boolean {
+  return markup.includes('class=madda_obligatory_monfasel');
+}
+
+export const pageFontFamily = (page: number) => `p${page}-v4`;
+
+/** `font-palette` value for a word on V4 page `page`. */
+export const paletteName = (page: number, munfasil: boolean) => `--tj${munfasil ? '-munfasil' : ''}-p${page}`;
+
+/** The `@font-palette-values` rules for one V4 page font: its words, and its words with a munfaṣil. */
+export function paletteCss(page: number, theme: Theme, custom: Partial<Record<Rule, string>> = {}): string {
+  const overrides: [number, string][] = [];
+  for (const [rule, slots] of Object.entries(RULE_SLOTS) as [Rule, number[]][]) {
+    const own = custom[rule];
+    if (own) for (const slot of slots) overrides.push([slot, own]);
+  }
+  const rule = (name: string, extra: [number, string][]) => {
+    const all = [...overrides.filter(([slot]) => !extra.some(([s]) => s === slot)), ...extra];
+    const override = all.length ? `override-colors:${all.map(([s, c]) => `${s} ${c}`).join(',')};` : '';
+    return `@font-palette-values ${name}{font-family:"${pageFontFamily(page)}";base-palette:${BASE_PALETTE[theme]};${override}}`;
+  };
+  return (
+    rule(paletteName(page, false), []) +
+    '\n' +
+    rule(paletteName(page, true), [[MUNFASIL_SLOT, ruleColour(theme, 'munfasil', custom)]]) +
+    '\n'
+  );
+}

@@ -10,13 +10,6 @@
   --dot: #e11d48;
   --hl: rgba(15, 118, 110, 0.14);
   --frame: #8a6d2f;
-  --tj-silent: #a5a5a5;
-  --tj-lazim: #b50000;
-  --tj-wajib: #f40000;
-  --tj-jaiz: #ff7b00;
-  --tj-tabii: #ce9e00;
-  --tj-ghunnah: #09b000;
-  --tj-qalqalah: #2fadff;
   --mistake: #dc2626;
   color-scheme: light;
 }
@@ -31,13 +24,6 @@
   --accent: #8a5a12;
   --hl: rgba(138, 90, 18, 0.16);
   --frame: #8a5a12;
-  --tj-silent: #a39a8e;
-  --tj-lazim: #b7001c;
-  --tj-wajib: #e00000;
-  --tj-jaiz: #e67b00;
-  --tj-tabii: #b08620;
-  --tj-ghunnah: #178a00;
-  --tj-qalqalah: #0096c7;
 }
 [data-theme='dark'] {
   --bg: #08090a;
@@ -51,13 +37,6 @@
   --dot: #fb7185;
   --hl: rgba(94, 234, 212, 0.16);
   --frame: #c7a45a;
-  --tj-silent: #8f8a8a;
-  --tj-lazim: #ff4d4d;
-  --tj-wajib: #ff6b8e;
-  --tj-jaiz: #ff9a4d;
-  --tj-tabii: #e6c35c;
-  --tj-ghunnah: #3ccf6e;
-  --tj-qalqalah: #33d6ff;
   --mistake: #f87171;
   color-scheme: dark;
 }
@@ -153,9 +132,10 @@ input {
   margin-top: 0.2em;
 }
 /*
- * 15.3em fits the widest line of the 1405 page glyphs (484px at 32px). The
- * Unicode tajweed text runs wider, so it is set at 0.89em, where a typical
- * (90th percentile) line fills the block; wider lines are shrunk in fitLines().
+ * 15.3em fits the widest line of the 1405 page glyphs (484px at 32px). In
+ * tajweed mode the words (V4 glyphs from the 1421 print, and Unicode verse
+ * numbers) run about 3% wider on a typical 1405 line, so they are set at 0.9em,
+ * where most lines fill the block; the rest are shrunk in fitLines().
  */
 .page-lines {
   display: flex;
@@ -167,7 +147,7 @@ input {
   justify-content: center;
 }
 .script-tajweed .line > span {
-  font-size: 0.89em;
+  font-size: 0.9em;
 }
 /* The 1405 basmala glyphs come from page 1, where they are set small. */
 .script-print .basmala > span {
@@ -190,13 +170,6 @@ input {
   border-radius: 0.25em;
   transition: background-color 0.12s;
 }
-.tj-silent { color: var(--tj-silent); }
-.tj-lazim { color: var(--tj-lazim); }
-.tj-wajib { color: var(--tj-wajib); }
-.tj-jaiz { color: var(--tj-jaiz); }
-.tj-tabii { color: var(--tj-tabii); }
-.tj-ghunnah { color: var(--tj-ghunnah); }
-.tj-qalqalah { color: var(--tj-qalqalah); }
 .show-highlight .w.active {
   background: var(--hl);
 }
@@ -572,7 +545,7 @@ select:disabled {
 }
 #legend li {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 22px 1fr;
   gap: 10px;
   align-items: start;
   padding: 6px 0;
@@ -581,10 +554,25 @@ select:disabled {
 #legend li:last-child {
   border-bottom: none;
 }
+/* The swatch is the colour picker itself. */
 .swatch {
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+.swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+.swatch::-moz-color-swatch {
+  border: none;
   border-radius: 4px;
 }
 .rule-name {

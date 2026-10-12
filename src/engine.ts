@@ -5,7 +5,7 @@ import {
   getChapterAudio,
   wordOrder,
 } from './api';
-import type { Script } from './fonts';
+import { type Script, v4Build } from './fonts';
 import { type Box, type MushafPage, buildPage } from './mushaf';
 import {
   type Keyframe,
@@ -401,8 +401,9 @@ export class Engine {
   private async show(pageNumber: number): Promise<MushafPage> {
     this.requestedPage = pageNumber;
     const page = await buildPage(pageNumber, this.opts.script, this.chapters);
-    // A newer navigation or script change superseded this one while it was loading.
-    if (this.requestedPage !== pageNumber || page.script !== this.opts.script) return page;
+    // A newer navigation, script change or font build change superseded this one while it was loading.
+    const build = this.opts.script === 'tajweed' ? v4Build() : 'v1';
+    if (this.requestedPage !== pageNumber || page.script !== this.opts.script || page.build !== build) return page;
     if (this.page !== page) {
       for (const el of [...this.stage.children]) {
         if (el !== page.el) el.remove();

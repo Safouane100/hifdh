@@ -1,6 +1,7 @@
 import { PAGE_COUNT, type Chapter, getChapters, getReciters, parseVerseKey } from './api';
 import { Engine, type Loop, type PlayState, type RangeMode } from './engine';
-import type { Script, Theme } from './fonts';
+import { type Script, type Theme, setTajweedColours, v4Build } from './fonts';
+import { type Rule, ruleColour } from './tajweed';
 import type { MushafPage } from './mushaf';
 import { Practice } from './practice';
 import { SPEECH_SUPPORTED, SPEECH_UNSUPPORTED_REASON } from './listener';
@@ -25,6 +26,8 @@ interface Settings {
   beep: boolean;
   /** While reciting, show upcoming words faintly instead of hiding them. */
   peek: boolean;
+  /** Your own tajweed colours by rule id (e.g. "munfasil"), overriding the defaults. */
+  colors: Partial<Record<Rule, string>>;
   range: RangeMode;
   repeat: number;
 }
@@ -44,6 +47,7 @@ const DEFAULTS: Settings = {
   autohide: true,
   beep: true,
   peek: false,
+  colors: {},
   range: 'page',
   repeat: 3,
 };
@@ -86,6 +90,7 @@ const ui = {
   toggleLegend: $<HTMLButtonElement>('toggle-legend'),
   legendList: $<HTMLUListElement>('legend-list'),
   legendNote: $<HTMLParagraphElement>('legend-note'),
+  resetColours: $<HTMLButtonElement>('reset-colours'),
   loopPoints: [...document.querySelectorAll<HTMLElement>('.loop-point')],
   mode: $<HTMLSelectElement>('mode'),
   smoothing: $<HTMLInputElement>('smoothing'),
@@ -101,26 +106,37 @@ const ui = {
   practice: $<HTMLButtonElement>('practice'),
 };
 
-const RULES: { id: string; name: string; desc: string }[] = [
+const RULES: { id: Rule; name: string; desc: string }[] = [
   { id: 'lazim', name: 'Madd Lāzim', desc: 'Necessary prolongation — 6 ḥarakāt.' },
-  { id: 'wajib', name: 'Madd Wājib Muttaṣil', desc: 'Obligatory prolongation — 4 or 5 ḥarakāt.' },
-  { id: 'jaiz', name: 'Madd Jāʾiz', desc: 'Permissible prolongation (munfaṣil, ʿāriḍ) — 2, 4 or 6 ḥarakāt.' },
+  { id: 'wajib', name: 'Madd Wājib Muttaṣil', desc: 'Long vowel followed by hamza in the same word — 4 or 5 ḥarakāt.' },
+  { id: 'munfasil', name: 'Madd Jāʾiz Munfaṣil', desc: 'Long vowel at the end of a word, hamza starting the next — 4 or 5 ḥarakāt (2 when shortened). quran.com draws it red like muttaṣil.' },
+  { id: 'jaiz', name: 'Madd Jāʾiz / ʿĀriḍ', desc: 'Permissible prolongation, e.g. before a letter made silent by stopping — 2, 4 or 6 ḥarakāt.' },
   { id: 'tabii', name: 'Madd Ṭabīʿī', desc: 'Normal prolongation — 2 ḥarakāt.' },
-  { id: 'ghunnah', name: 'Ghunnah', desc: 'Nasalisation (ikhfāʾ, idghām, iqlāb, mushaddad nūn/mīm) — 2 ḥarakāt.' },
+  { id: 'ghunnah', name: 'Ghunnah', desc: 'Nasalisation, 2 ḥarakāt: ikhfāʾ, iqlāb, idghām with ghunnah, mushaddad nūn/mīm.' },
   { id: 'qalqalah', name: 'Qalqalah', desc: 'Echoing bounce on a sākin ق ط ب ج د.' },
-  { id: 'silent', name: 'Silent letters', desc: 'Written but not pronounced — hamzat al-waṣl, lām shamsiyyah, etc.' },
+  { id: 'tafkhim', name: 'Tafkhīm', desc: 'Heavy, full-mouthed letters — the istiʿlāʾ letters and a heavy Rāʾ.' },
+  { id: 'silent', name: 'Silent letters', desc: 'Written but not pronounced — hamzat al-waṣl, lām shamsiyyah, a merged noon or meem, etc.' },
 ];
 
 function renderLegend(): void {
   ui.legendNote.textContent = settings.tajweed
-    ? 'Letters are coloured from quran.com’s tajweed annotations, set in the King Fahd Complex Uthmanic Hafs font on the 1405 print’s pages and lines.'
+    ? 'Colours are drawn by quran.com’s tajweed fonts (King Fahd Complex QCF V4). Printed tajweed mushafs use different colour schemes: click a colour to change it to match yours.'
     : 'Exact print calligraphy is shown, which has no colours. Turn on “Tajweed colours” in Settings to colour the letters.';
+  ui.resetColours.hidden = Object.keys(settings.colors).length === 0;
   ui.legendList.replaceChildren(
     ...RULES.map((rule) => {
       const li = document.createElement('li');
-      const swatch = document.createElement('span');
-      swatch.className = 'swatch';
-      swatch.style.background = `var(--tj-${rule.id})`;
+      const picker = document.createElement('input');
+      picker.type = 'color';
+      picker.className = 'swatch';
+      picker.title = `Change the colour for ${rule.name}`;
+      picker.value = ruleColour(settings.theme, rule.id, settings.colors);
+      picker.addEventListener('input', () => {
+        settings.colors[rule.id] = picker.value;
+        save();
+        setTajweedColours(settings.theme, settings.colors);
+        ui.resetColours.hidden = false;
+      });
       const text = document.createElement('div');
       const name = document.createElement('div');
       name.className = 'rule-name';
@@ -129,7 +145,7 @@ function renderLegend(): void {
       desc.className = 'rule-desc';
       desc.textContent = rule.desc;
       text.append(name, desc);
-      li.append(swatch, text);
+      li.append(picker, text);
       return li;
     }),
   );
@@ -141,6 +157,7 @@ function applyLook(): void {
   document.body.classList.toggle('show-highlight', settings.highlight);
   document.body.classList.toggle('vignette', settings.vignette);
   document.body.classList.toggle('peek-ahead', settings.peek);
+  setTajweedColours(settings.theme, settings.colors);
   renderLegend();
 }
 
@@ -394,7 +411,10 @@ function bindControls(): void {
   ui.theme.addEventListener('change', () => {
     settings.theme = ui.theme.value as Theme;
     save();
+    const build = v4Build();
     applyLook();
+    // Firefox's dark mode needs different tajweed font files (see fonts.ts).
+    if (v4Build() !== build) void engine.reconfigure({});
   });
   ui.tajweed.addEventListener('change', () => {
     settings.tajweed = ui.tajweed.checked;
@@ -422,6 +442,12 @@ function bindControls(): void {
   };
   ui.toggleSettings.addEventListener('click', () => togglePanel(ui.settingsPanel, ui.legendPanel));
   ui.toggleLegend.addEventListener('click', () => togglePanel(ui.legendPanel, ui.settingsPanel));
+  ui.resetColours.addEventListener('click', () => {
+    settings.colors = {};
+    save();
+    setTajweedColours(settings.theme, settings.colors);
+    renderLegend();
+  });
 
   ui.pager.addEventListener('click', (e) => {
     const word = (e.target as HTMLElement).closest<HTMLElement>('.w');

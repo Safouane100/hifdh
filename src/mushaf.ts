@@ -1,5 +1,6 @@
-import { type Chapter, type Verse, type Word, getPageVerses, parseVerseKey, wordOrder } from './api';
-import { type Script, pageFont } from './fonts';
+import { type Chapter, type V4Glyph, type Verse, type Word, getPageVerses, getV4Glyphs, parseVerseKey, wordOrder } from './api';
+import { type Script, printFont, tajweedFont, textFont, v4Build } from './fonts';
+import { hasMunfasil, paletteName } from './tajweed';
 
 /** Horizontal extent and vertical centre of a word, in unscaled page pixels. */
 export interface Box {
@@ -33,67 +34,43 @@ const CENTERED_LINES: Record<number, number[]> = {
   603: [10],
   604: [9, 14, 15],
 };
-/**
- * Colour class for each tajweed rule tag in quran.com's `text_uthmani_tajweed`,
- * grouped the way the Dar al-Maʿrifah colour-coded mushaf groups them.
- */
-const RULE_COLOR: Record<string, string> = {
-  ham_wasl: 'silent',
-  laam_shamsiyah: 'silent',
-  slnt: 'silent',
-  idgham_wo_ghunnah: 'silent',
-  idgham_mutajanisayn: 'silent',
-  idgham_mutaqaribayn: 'silent',
-  madda_normal: 'tabii',
-  madda_permissible: 'jaiz',
-  madda_obligatory_monfasel: 'jaiz',
-  madda_obligatory_mottasel: 'wajib',
-  madda_necessary: 'lazim',
-  qalaqah: 'qalqalah',
-  ghunnah: 'ghunnah',
-  ikhafa: 'ghunnah',
-  ikhafa_shafawi: 'ghunnah',
-  iqlab: 'ghunnah',
-  idgham_ghunnah: 'ghunnah',
-  idgham_shafawi: 'ghunnah',
-};
 
 const toArabicDigits = (n: number) => n.toLocaleString('ar-EG', { useGrouping: false });
 
-/**
- * Append tajweed-marked text as coloured spans. The markup comes from the API;
- * it is parsed inertly and only its text and known rule classes are copied, so
- * nothing from it is ever interpreted as HTML in the page.
- */
-function appendTajweed(target: HTMLElement, markup: string): void {
-  const doc = new DOMParser().parseFromString(`<body>${markup}</body>`, 'text/html');
-  const copy = (from: Node, into: Node) => {
-    for (const child of from.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        into.appendChild(document.createTextNode(child.textContent ?? ''));
-      } else if (child instanceof Element) {
-        // Unknown tags (e.g. the nested "custom-alef-maksora") inherit the
-        // enclosing rule's colour.
-        const color = RULE_COLOR[child.getAttribute('class') ?? ''];
-        if (!color) {
-          copy(child, into);
-          continue;
-        }
-        const span = document.createElement('span');
-        span.className = `tj-${color}`;
-        into.appendChild(span);
-        copy(child, span);
-      }
-    }
-  };
-  copy(doc.body, target);
+/** How a page's words are drawn: resolved fonts and, for tajweed, each word's V4 glyph. */
+interface Drawing {
+  script: Script;
+  /** Font of the text block: the page's glyphs (print), or Uthmanic Hafs for verse numbers (tajweed). */
+  lineFont: string;
+  /** Print: page 1's glyph font, for the basmala. */
+  basmalaFont?: string;
+  /** Tajweed: V4 glyph of every word on the page (and of 1:1, for the basmala). */
+  glyphs?: Map<string, V4Glyph>;
+  /** Tajweed: font family of each 1421-print page the glyphs come from. */
+  families?: Map<number, string>;
 }
 
-function fillWord(el: HTMLElement, word: Word, verseNumber: number, script: Script): void {
-  if (script === 'print') el.textContent = word.code_v1;
+function fillWord(el: HTMLElement, word: Word, key: string, verseNumber: number, drawing: Drawing): void {
+  if (drawing.script === 'print') {
+    el.textContent = word.code_v1;
+    return;
+  }
   // Uthmanic Hafs draws Arabic-Indic digits as the ayah-number ornament.
-  else if (word.char_type_name === 'end') el.textContent = toArabicDigits(verseNumber);
-  else appendTajweed(el, word.text_uthmani_tajweed);
+  if (word.char_type_name === 'end') {
+    el.textContent = toArabicDigits(verseNumber);
+    return;
+  }
+  const glyph = drawing.glyphs?.get(key);
+  const family = glyph && drawing.families?.get(glyph.page);
+  if (!glyph || !family) {
+    // Not expected (every word has a V4 glyph), but a missing one shows as plain text.
+    el.textContent = word.text_uthmani;
+    return;
+  }
+  el.classList.add('v4');
+  el.textContent = glyph.code;
+  el.style.fontFamily = `"${family}"`;
+  el.style.fontPalette = paletteName(glyph.page, hasMunfasil(word.text_uthmani_tajweed));
 }
 
 export class MushafPage {
@@ -104,22 +81,25 @@ export class MushafPage {
   readonly firstWord: WordRef;
   readonly lastOrder: number;
   private fitted = false;
+  readonly script: Script;
 
   constructor(
     readonly page: number,
-    readonly script: Script,
-    fonts: { page: string; basmala: string },
+    /** Font build the page was drawn with (see fonts.ts `v4Build`); another build needs a rebuild. */
+    readonly build: string,
+    drawing: Drawing,
     verses: Verse[],
     /** Words of 1:1, reused to draw every basmala exactly as page 1 has it. */
     basmalaWords: Word[],
     chapters: Chapter[],
   ) {
+    this.script = drawing.script;
     this.el = document.createElement('div');
-    this.el.className = `mushaf-page script-${script}`;
+    this.el.className = `mushaf-page script-${drawing.script}`;
     this.el.dataset.page = String(page);
     const linesEl = document.createElement('div');
     linesEl.className = page <= 2 ? 'page-lines opening' : 'page-lines';
-    linesEl.style.fontFamily = `"${fonts.page}"`;
+    linesEl.style.fontFamily = `"${drawing.lineFont}"`;
 
     type Placed = { verse: Verse; word: Word };
     const byLine = new Map<number, Placed[]>();
@@ -174,11 +154,11 @@ export class MushafPage {
         lineEl.append(frame);
       } else if (header?.kind === 'basmala') {
         lineEl.classList.add('basmala', 'centered');
-        lineEl.style.fontFamily = `"${fonts.basmala}"`;
+        if (drawing.basmalaFont) lineEl.style.fontFamily = `"${drawing.basmalaFont}"`;
         for (const word of basmalaWords) {
           if (word.char_type_name !== 'word') continue;
           const span = document.createElement('span');
-          fillWord(span, word, 1, script);
+          fillWord(span, word, `1:1:${word.position}`, 1, drawing);
           lineEl.append(span);
         }
         this.basmala.set(header.chapter, { el: lineEl, box: { l: 0, r: 0, cy: 0 } });
@@ -187,8 +167,7 @@ export class MushafPage {
         const [chapter, verseNumber] = parseVerseKey(verse.verse_key);
         const span = document.createElement('span');
         span.className = word.char_type_name === 'end' ? 'w end' : 'w';
-        fillWord(span, word, verseNumber, script);
-        if (script === 'print') span.title = word.text_uthmani;
+        fillWord(span, word, `${verse.verse_key}:${word.position}`, verseNumber, drawing);
         const ref: WordRef = {
           key: `${verse.verse_key}:${word.position}`,
           order: wordOrder(chapter, verseNumber, word.position),
@@ -267,24 +246,38 @@ export class MushafPage {
   }
 }
 
+/** Load what drawing a page's `verses` in `script` needs: fonts and, for tajweed, the words' V4 glyphs. */
+async function loadDrawing(script: Script, page: number, verses: Verse[], opening: Verse): Promise<Drawing> {
+  if (script === 'print') {
+    const [lineFont, basmalaFont] = await Promise.all([printFont(page), printFont(1)]);
+    return { script, lineFont, basmalaFont };
+  }
+  const [lineFont, glyphs, openingGlyphs] = await Promise.all([textFont(), getV4Glyphs(page), getV4Glyphs(1)]);
+  const needed = new Map<string, V4Glyph>();
+  for (const verse of [...verses, opening]) {
+    for (const word of verse.words) {
+      const key = `${verse.verse_key}:${word.position}`;
+      const glyph = glyphs.get(key) ?? openingGlyphs.get(key);
+      if (glyph && word.char_type_name === 'word') needed.set(key, glyph);
+    }
+  }
+  const pages = [...new Set([...needed.values()].map((g) => g.page))];
+  const families = new Map(await Promise.all(pages.map(async (p) => [p, await tajweedFont(p)] as const)));
+  return { script, lineFont, glyphs: needed, families };
+}
+
 const building = new Map<string, Promise<MushafPage>>();
 
-/** Fetch layout + fonts for a page and build its DOM (not yet attached). Cached per script. */
+/** Fetch layout + fonts for a page and build its DOM (not yet attached). Cached per script and font build. */
 export function buildPage(page: number, script: Script, chapters: Chapter[]): Promise<MushafPage> {
-  const key = `${script}:${page}`;
+  const build = script === 'tajweed' ? v4Build() : 'v1';
+  const key = `${script}:${build}:${page}`;
   let p = building.get(key);
   if (!p) {
-    p = Promise.all([getPageVerses(page), getPageVerses(1), pageFont(page, script), pageFont(1, script)]).then(
-      ([verses, openingPage, font, basmalaFont]) =>
-        new MushafPage(
-          page,
-          script,
-          { page: font, basmala: basmalaFont },
-          verses,
-          openingPage[0].words,
-          chapters,
-        ),
-    );
+    p = Promise.all([getPageVerses(page), getPageVerses(1)]).then(async ([verses, openingPage]) => {
+      const drawing = await loadDrawing(script, page, verses, openingPage[0]);
+      return new MushafPage(page, build, drawing, verses, openingPage[0].words, chapters);
+    });
     p.catch(() => building.delete(key));
     building.set(key, p);
   }

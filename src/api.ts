@@ -96,6 +96,56 @@ export async function getPageVerses(page: number): Promise<Verse[]> {
   return data.verses;
 }
 
+/** A word's glyph in quran.com's QCF V4 tajweed fonts (1421 print, mushaf 19). */
+export interface V4Glyph {
+  code: string;
+  /** 1421-print page, which selects the font the code belongs to. */
+  page: number;
+}
+
+const TAJWEED_V4_MUSHAF = 19;
+
+/** Words of the 1421 print as the API returns them for mushaf 19. */
+export interface V4Verse {
+  verse_key: string;
+  words: { position: number; code_v2: string; page_number: number; char_type_name: string }[];
+}
+
+/**
+ * Index 1421-print words by `${chapter}:${verse}:${position}`. Ayah-number
+ * markers are left out: they are drawn in Uthmanic Hafs, as the Quran
+ * Foundation's rendering guide advises.
+ */
+export function indexV4Glyphs(verses: V4Verse[]): Map<string, V4Glyph> {
+  const glyphs = new Map<string, V4Glyph>();
+  for (const verse of verses) {
+    for (const word of verse.words) {
+      if (word.char_type_name !== 'word') continue;
+      glyphs.set(`${verse.verse_key}:${word.position}`, { code: word.code_v2, page: word.page_number });
+    }
+  }
+  return glyphs;
+}
+
+async function getV4PageGlyphs(page: number): Promise<Map<string, V4Glyph>> {
+  const data = await getJson<{ verses: V4Verse[] }>(
+    `${QDC}/verses/by_page/${page}?words=true&per_page=all&filter_page_words=true` +
+      `&word_fields=verse_key,page_number,code_v2&mushaf=${TAJWEED_V4_MUSHAF}`,
+  );
+  return indexV4Glyphs(data.verses);
+}
+
+/**
+ * V4 glyphs for the words of 1405-print page `page`. The two prints break
+ * pages differently, but never by more than a page, so the 1421 pages
+ * `page - 1` to `page + 1` hold all its words.
+ */
+export async function getV4Glyphs(page: number): Promise<Map<string, V4Glyph>> {
+  const pages = [page - 1, page, page + 1].filter((p) => p >= 1 && p <= PAGE_COUNT);
+  const maps = await Promise.all(pages.map(getV4PageGlyphs));
+  return new Map(maps.flatMap((m) => [...m]));
+}
+
 // "Kids repeat" style recitations repeat every word, so their segment data
 // cannot be mapped onto a single pass over the page.
 const UNSUPPORTED_STYLES = /repeat/i;
