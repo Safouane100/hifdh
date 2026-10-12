@@ -1,6 +1,6 @@
 import { type Chapter, type V4Glyph, type Verse, type Word, getPageVerses, getV4Glyphs, parseVerseKey, wordOrder } from './api';
 import { type Script, printFont, tajweedFont, textFont, v4Build } from './fonts';
-import { hasMunfasil, paletteName } from './tajweed';
+import { beats, hasMunfasil, opensWithHeldIdgham, paletteName } from './tajweed';
 
 /** Horizontal extent and vertical centre of a word, in unscaled page pixels. */
 export interface Box {
@@ -24,6 +24,9 @@ export interface WordRef {
   /** English word-by-word translation and transliteration, for the hover popover. */
   translation: string;
   transliteration: string;
+  /** Spoken length and held opening letter, from the tajweed markup (see timeline.ts `retimeHeldStarts`). */
+  beats: number;
+  heldStart: boolean;
 }
 
 const LINES_PER_PAGE = 15;
@@ -182,6 +185,8 @@ export class MushafPage {
           plain: word.text_imlaei_simple ?? '',
           translation: word.translation?.text ?? '',
           transliteration: word.transliteration?.text ?? '',
+          beats: beats(word.text_uthmani_tajweed),
+          heldStart: opensWithHeldIdgham(word.text_uthmani_tajweed),
         };
         span.dataset.k = ref.key;
         this.words.set(ref.key, ref);

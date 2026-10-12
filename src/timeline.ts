@@ -39,6 +39,48 @@ export function flattenSegments(timings: VerseTiming[]): TimedWord[] {
   return out.sort((a, b) => a.start - b.start);
 }
 
+/** What re-timing needs to know about a word on the page (see tajweed.ts `beats`). */
+export interface SpokenWord {
+  beats: number;
+  /** Opens with the held letter of an idghām with ghunnah from the previous word. */
+  heldStart: boolean;
+}
+
+const isNextWord = (prev: string, next: string) => {
+  const p = prev.lastIndexOf(':');
+  const n = next.lastIndexOf(':');
+  return prev.slice(0, p) === next.slice(0, n) && Number(next.slice(n + 1)) === Number(prev.slice(p + 1)) + 1;
+};
+
+/**
+ * In an idghām with ghunnah (83:4 أَنَّهُم مَّبْعُوثُونَ) the reciter holds the
+ * next word's first letter, drawn green, for two beats. Segment data puts that
+ * hold on either side of the word boundary depending on the recording, so with
+ * the hold counted in the previous word the focus would sit on the end of the
+ * line while the green letter starting the next one is being held. Where the
+ * segment boundary is later than the two words' combined time shared by their
+ * beats, the boundary moves back to that point.
+ */
+export function retimeHeldStarts(
+  words: TimedWord[],
+  spokenOf: (wordKey: string) => SpokenWord | undefined,
+): TimedWord[] {
+  const out = words.slice();
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1];
+    const next = out[i];
+    if (!isNextWord(prev.key, next.key)) continue;
+    const a = spokenOf(prev.key);
+    const b = spokenOf(next.key);
+    if (!a || !b?.heldStart) continue;
+    const split = prev.start + ((next.end - prev.start) * a.beats) / (a.beats + b.beats);
+    if (!(split > prev.start && split < prev.end)) continue;
+    out[i - 1] = { ...prev, end: split };
+    out[i] = { ...next, start: Math.min(next.start, split) };
+  }
+  return out;
+}
+
 export interface KeyframeSources {
   words: TimedWord[];
   timings: VerseTiming[];

@@ -18,7 +18,7 @@ Everything is fetched at runtime from those public endpoints, so the site needs 
 npm install
 npm run dev        # http://localhost:5173
 npm run build      # static site in dist/, host anywhere
-npm test           # tajweed colouring specs
+npm test           # tajweed colouring and focus timing specs
 ```
 
 ## Using it
@@ -34,7 +34,7 @@ npm test           # tajweed colouring specs
 - Reloading the site brings you back to the ayah you were on, not to the top of its page (which may be the end of the previous surah).
 - **Hover over a word** to see it with its transliteration and English meaning (quran.com's word-by-word translation). While the page is moving, the popover closes once its word slides away from the pointer; words still hidden while reciting show nothing.
 
-The fonts draw each word as a single glyph, so "letter" tracking is interpolated: within each word's timestamp the focus slides from its right edge to its left edge at a constant rate. It follows pronunciation closely but it isn't timed per letter.
+The fonts draw each word as a single glyph, so "letter" tracking is interpolated: within each word's timestamp the focus slides from its right edge to its left edge at a constant rate. It follows pronunciation closely but it isn't timed per letter. One exception is corrected: in an idghām with ghunnah (أَنَّهُم مَّبْعُوثُونَ) the held green letter opens the next word, but many recordings' timestamps count the hold in the previous word, which would leave the focus on the end of the line while the green letter starting the next line is held. Where that happens, the two words' combined time is shared by their spoken length (letters, madd and ghunnah beats read from the tajweed markup), so the focus moves on as the hold begins.
 
 ## Reciting from memory
 
@@ -58,7 +58,7 @@ If reciting doesn't respond, read the status line at the bottom right:
 - `src/fonts.ts` — loads the V1 page fonts (exact print), the V4 tajweed page fonts (colour mode; OT-SVG dark build in Firefox's dark mode) and Uthmanic Hafs (verse numbers), and keeps the V4 palette rules current.
 - `src/mushaf.ts` — builds a page's 15 lines (surah titles, basmala, words), fits them to one width and measures word boxes.
 - `src/tajweed.ts` — tajweed colours as quran.com draws them: the V4 fonts' palettes per theme, the palette slot each rule uses, the pink munfaṣil palette and your own colours as `@font-palette-values` overrides. `src/tajweed.test.ts` specifies it (and the V4 glyph lookup in `api.ts`) with one case per colouring problem reported (munfaṣil pink; the reported ikhfāʾ / iqlāb words drawn with quran.com's own glyphs). Add a case there for any new colouring report before fixing it.
-- `src/timeline.ts` — turns word timestamps into focus keyframes and samples them.
+- `src/timeline.ts` — turns word timestamps into focus keyframes and samples them, moving held idghām letters onto their own word first. `src/timeline.test.ts` specifies that with the reported 83:4 case in two recordings.
 - `src/engine.ts` — audio, page flips, surah transitions, range/repeat.
 - `src/main.ts` — controls, settings (saved in `localStorage`), per-frame rendering.
 - `src/recite.ts` — normalises Arabic and aligns what the recogniser heard with the expected words.

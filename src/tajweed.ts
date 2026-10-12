@@ -58,6 +58,66 @@ export function hasMunfasil(markup: string): boolean {
   return markup.includes('class=madda_obligatory_monfasel');
 }
 
+// --- Spoken length, for timing ---------------------------------------------
+
+const HELD_IDGHAM: Record<string, true> = { idgham_ghunnah: true, idgham_shafawi: true };
+const UNSPOKEN: Record<string, true> = { slnt: true, ham_wasl: true, laam_shamsiyah: true };
+/** Beats a rule adds beyond its letters: madd lengthening, ghunnah holds. */
+const EXTRA_BEATS: Record<string, number> = {
+  madda_permissible: 2,
+  madda_obligatory_mottasel: 2,
+  madda_obligatory_monfasel: 2,
+  madda_necessary: 4,
+  ghunnah: 1,
+  ikhafa: 1,
+  ikhafa_shafawi: 1,
+  iqlab: 1,
+};
+// Letters, dagger alif and the small wāw/yāʾ of a lengthened pronoun.
+const LETTER = /[\u0621-\u063A\u0641-\u064A\u0670\u0671\u06E5\u06E6]/u;
+const SHADDA = '\u0651';
+
+/**
+ * Whether a word opens with the held, nasalised letter of an idghām with
+ * ghunnah from the previous word, drawn green: the mīm of 83:4 أَنَّهُم مَّبْعُوثُونَ.
+ */
+export function opensWithHeldIdgham(markup: string): boolean {
+  const m = /^<rule class=(\w+)>/.exec(markup);
+  return m !== null && HELD_IDGHAM[m[1]] === true;
+}
+
+/**
+ * Rough spoken length of a word in beats (ḥarakāt) from its tajweed markup,
+ * read as recited in context: a final nūn or mīm merged into the next word is
+ * silent, and an opening held letter takes three beats (doubled, plus its ghunnah).
+ */
+export function beats(markup: string): number {
+  let n = 0;
+  let skipShadda = false;
+  for (const m of markup.matchAll(/<rule class=(\w+)>([^<]*)<\/rule>|([^<]+)/gu)) {
+    const cls = m[1] ?? '';
+    const text = m[2] ?? m[3];
+    if (m.index === 0 && HELD_IDGHAM[cls] === true) {
+      // Its shadda, when written, is already part of the three beats.
+      n += 3;
+      skipShadda = true;
+      continue;
+    }
+    const merged = cls.startsWith('idgham') && m.index !== 0;
+    for (const ch of text) {
+      if (ch === SHADDA) {
+        if (!skipShadda) n += 1;
+        skipShadda = false;
+      } else if (LETTER.test(ch)) {
+        skipShadda = false;
+        if (UNSPOKEN[cls] !== true && !(merged && (ch === 'ن' || ch === 'م'))) n += 1;
+      }
+    }
+    n += EXTRA_BEATS[cls] ?? 0;
+  }
+  return n;
+}
+
 export const pageFontFamily = (page: number) => `p${page}-v4`;
 
 /** `font-palette` value for a word on V4 page `page`. */
