@@ -24,7 +24,7 @@
       <div id="hint" role="note">
         <p class="hint-title">Fix your eyes on the dot</p>
         <p>Keep your gaze still. The page moves so the word being recited always passes under the dot.</p>
-        <p class="hint-keys"><kbd>Space</kbd> play / pause · <kbd>→</kbd> next ayah · <kbd>←</kbd> start of ayah / previous ayah · <kbd>&lt;</kbd> <kbd>&gt;</kbd> slower / faster · <kbd>PgDn</kbd> <kbd>PgUp</kbd> turn page · <kbd>+</kbd> <kbd>−</kbd> zoom · click a word to start there</p>
+        <p class="hint-keys"><kbd>Space</kbd> play / pause · <kbd>→</kbd> next ayah · <kbd>←</kbd> start of ayah / previous ayah · <kbd>Shift</kbd>+<kbd>→</kbd> <kbd>←</kbd> next / previous surah · <kbd>&lt;</kbd> <kbd>&gt;</kbd> slower / faster · <kbd>PgDn</kbd> <kbd>PgUp</kbd> turn page · <kbd>+</kbd> <kbd>−</kbd> zoom · click a word to start there</p>
         <p class="hint-keys">Loop: <kbd>A</kbd> / <kbd>B</kbd> set the loop start / end at the current ayah (press again to remove) · <kbd>Shift</kbd>+click a word sets A, <kbd>Alt</kbd>+click sets B · <kbd>C</kbd> clears the loop</p>
         <p class="hint-keys">Recite from memory: <kbd>P</kbd> starts listening from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · <kbd>H</kbd> shows the next word · <kbd>←</kbd> recite this ayah again · <kbd>Space</kbd> pause · <kbd>Esc</kbd> stop</p>
       </div>
@@ -32,10 +32,14 @@
 
     <header id="topbar" class="bar">
       <div class="brand">Hifz Focus</div>
-      <label class="field">
-        <span class="sr-only">Surah</span>
-        <select id="surah" aria-label="Surah"></select>
-      </label>
+      <div class="field surahnav">
+        <button id="prev-surah" class="icon" title="Previous surah (Shift+←)" aria-label="Previous surah">‹</button>
+        <label>
+          <span class="sr-only">Surah</span>
+          <select id="surah" aria-label="Surah"></select>
+        </label>
+        <button id="next-surah" class="icon" title="Next surah (Shift+→)" aria-label="Next surah">›</button>
+      </div>
       <div class="field pagenav">
         <button id="prev-page" class="icon" title="Previous page (PageUp)" aria-label="Previous page">‹</button>
         <label>

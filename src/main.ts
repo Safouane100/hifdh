@@ -1,4 +1,4 @@
-import { PAGE_COUNT, type Chapter, getChapters, getReciters, parseVerseKey } from './api';
+import { PAGE_COUNT, type Chapter, getChapters, getReciters } from './api';
 import { Engine, type Loop, type PlayState, type RangeMode } from './engine';
 import { type Script, type Theme, setTajweedColours, v4Build } from './fonts';
 import { type Rule, ruleColour } from './tajweed';
@@ -9,6 +9,8 @@ import type { Point, TrackingMode } from './timeline';
 
 interface Settings {
   page: number;
+  /** Ayah the dot was on (`chapter:verse`), restored on reload; '' for the page's first. */
+  verse: string;
   reciter: number;
   theme: Theme;
   tajweed: boolean;
@@ -36,6 +38,7 @@ interface Settings {
 
 const DEFAULTS: Settings = {
   page: 1,
+  verse: '',
   reciter: 7, // Mishari Rashid al-Afasy, the quran.com default
   theme: 'light',
   tajweed: true,
@@ -80,6 +83,8 @@ const ui = {
   surah: $<HTMLSelectElement>('surah'),
   page: $<HTMLInputElement>('page'),
   nextPage: $<HTMLButtonElement>('next-page'),
+  nextSurah: $<HTMLButtonElement>('next-surah'),
+  prevSurah: $<HTMLButtonElement>('prev-surah'),
   prevPage: $<HTMLButtonElement>('prev-page'),
   where: $<HTMLDivElement>('where'),
   reciter: $<HTMLSelectElement>('reciter'),
@@ -281,6 +286,7 @@ function renderFrame(now: number): void {
     active?.classList.add('active');
     highlighted = active;
   }
+  syncWhere();
   placePopover();
   requestAnimationFrame(renderFrame);
 }
@@ -297,16 +303,43 @@ function goTo(page: number, focusKey?: string): void {
   else void engine.open(n, focusKey);
 }
 
+/** Go to the start of a surah (its basmala, then ayah 1), keeping playing or reciting if active. */
+function openSurah(chapter: Chapter): void {
+  if (practice.active) {
+    const from = `${chapter.id}:1`;
+    void practice.start({ verseKey: from, page: chapter.pages[0] }, practiceEnd(from));
+    return;
+  }
+  goTo(chapter.pages[0], `${chapter.id}:1:1`);
+}
+
+/** Next (`1`) or previous (`-1`) surah from the one the dot is in. */
+function goToSurah(dir: 1 | -1): void {
+  const target = chapters[shownChapter - 1 + dir];
+  if (target) openSurah(target);
+}
+
+/** Surah of the ayah under the dot, as shown in the header. */
+let shownChapter = 1;
+let shownVerse = '';
+
+/** Keep the surah picker and the header on the ayah the dot is on, which may change mid-page. */
+function syncWhere(): void {
+  const here = engine.currentVerse();
+  if (!here || here.verseKey === shownVerse) return;
+  shownVerse = here.verseKey;
+  settings.verse = here.verseKey;
+  save();
+  const [c, v] = here.verseKey.split(':').map(Number);
+  shownChapter = c;
+  ui.surah.value = String(c);
+  ui.where.textContent = `${chapters[c - 1].name_simple} ${c}:${v} · page ${here.page} of ${PAGE_COUNT}`;
+}
+
 function onPage(page: MushafPage): void {
   settings.page = page.page;
   save();
   ui.page.value = String(page.page);
-  const [chapterId] = parseVerseKey(page.firstWord.key);
-  const chapter = chapters[chapterId - 1];
-  // Show the last surah that starts on or before this page (the one the page is "in").
-  const current = chapters.filter((c) => c.pages[0] <= page.page && page.page <= c.pages[1]).at(-1) ?? chapter;
-  ui.surah.value = String(current.id);
-  ui.where.textContent = `${chapter.name_simple} ${page.firstWord.key.split(':').slice(0, 2).join(':')} · page ${page.page} of ${PAGE_COUNT}`;
   highlighted = undefined;
   pageSize = { w: page.el.offsetWidth, h: page.el.offsetHeight };
   paintLoop();
@@ -430,10 +463,9 @@ function showControls(): void {
 
 function bindControls(): void {
   // A surah starts at its first ayah, which is often part-way down its first page.
-  ui.surah.addEventListener('change', () => {
-    const chapter = chapters[Number(ui.surah.value) - 1];
-    goTo(chapter.pages[0], `${chapter.id}:1:1`);
-  });
+  ui.surah.addEventListener('change', () => openSurah(chapters[Number(ui.surah.value) - 1]));
+  ui.nextSurah.addEventListener('click', () => goToSurah(1));
+  ui.prevSurah.addEventListener('click', () => goToSurah(-1));
   ui.page.addEventListener('change', () => goTo(Number(ui.page.value)));
   ui.nextPage.addEventListener('click', () => goTo((engine.page?.page ?? 1) + 1));
   ui.prevPage.addEventListener('click', () => goTo((engine.page?.page ?? 1) - 1));
@@ -563,12 +595,13 @@ function bindControls(): void {
         if (practice.active) practice.toggleListening();
         else engine.toggle();
         break;
-      // → moves forward (next ayah), ← back.
+      // → moves forward (next ayah), ← back. With Shift: by surah.
       case 'ArrowLeft':
       case 'ArrowRight': {
         e.preventDefault();
         const dir = e.key === 'ArrowRight' ? 1 : -1;
-        if (practice.active) {
+        if (e.shiftKey) goToSurah(dir);
+        else if (practice.active) {
           void engine.ayahTarget(dir).then((target) => target && practice.restartAt(target));
         } else void engine.stepAyah(dir);
         break;
@@ -698,7 +731,9 @@ async function main(): Promise<void> {
     }
     bindControls();
     requestAnimationFrame(renderFrame);
-    await engine.open(settings.page);
+    // Come back to the ayah you were on, not the top of its page (which may be
+    // the end of the previous surah).
+    await engine.open(settings.page, settings.verse ? `${settings.verse}:1` : undefined);
   } catch (err) {
     console.error(err);
     setStatus(`Could not reach quran.com: ${err instanceof Error ? err.message : err}`, true);
