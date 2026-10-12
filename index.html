@@ -24,9 +24,9 @@
       <div id="hint" role="note">
         <p class="hint-title">Fix your eyes on the dot</p>
         <p>Keep your gaze still. The page moves so the word being recited always passes under the dot.</p>
-        <p class="hint-keys"><kbd>Space</kbd> play / pause · <kbd>←</kbd> next ayah · <kbd>→</kbd> start of ayah / previous ayah · <kbd>&lt;</kbd> <kbd>&gt;</kbd> slower / faster · <kbd>PgDn</kbd> <kbd>PgUp</kbd> turn page · <kbd>+</kbd> <kbd>−</kbd> zoom · click a word to start there</p>
+        <p class="hint-keys"><kbd>Space</kbd> play / pause · <kbd>→</kbd> next ayah · <kbd>←</kbd> start of ayah / previous ayah · <kbd>&lt;</kbd> <kbd>&gt;</kbd> slower / faster · <kbd>PgDn</kbd> <kbd>PgUp</kbd> turn page · <kbd>+</kbd> <kbd>−</kbd> zoom · click a word to start there</p>
         <p class="hint-keys">Loop: <kbd>A</kbd> / <kbd>B</kbd> set the loop start / end at the current ayah (press again to remove) · <kbd>Shift</kbd>+click a word sets A, <kbd>Alt</kbd>+click sets B · <kbd>C</kbd> clears the loop</p>
-        <p class="hint-keys">Recite from memory: <kbd>P</kbd> starts listening from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · <kbd>H</kbd> shows the next word · <kbd>→</kbd> recite this ayah again · <kbd>Space</kbd> pause · <kbd>Esc</kbd> stop</p>
+        <p class="hint-keys">Recite from memory: <kbd>P</kbd> starts listening from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · <kbd>H</kbd> shows the next word · <kbd>←</kbd> recite this ayah again · <kbd>Space</kbd> pause · <kbd>Esc</kbd> stop</p>
       </div>
     </main>
 
@@ -37,12 +37,12 @@
         <select id="surah" aria-label="Surah"></select>
       </label>
       <div class="field pagenav">
-        <button id="next-page" class="icon" title="Next page (PageDown)" aria-label="Next page">‹</button>
+        <button id="prev-page" class="icon" title="Previous page (PageUp)" aria-label="Previous page">‹</button>
         <label>
           <span>Page</span>
           <input id="page" type="number" min="1" max="604" inputmode="numeric" aria-label="Page number" />
         </label>
-        <button id="prev-page" class="icon" title="Previous page (PageUp)" aria-label="Previous page">›</button>
+        <button id="next-page" class="icon" title="Next page (PageDown)" aria-label="Next page">›</button>
       </div>
       <div id="where" class="where" aria-live="polite"></div>
       <label class="field">
@@ -80,18 +80,18 @@
         <div class="loop-point" data-point="a">
           <button class="set" title="Loop start: set at the current ayah (A). Again on the same ayah removes it.">A</button>
           <span class="edit">
-            <button class="nudge" data-dir="1" title="Move A one ayah later">‹</button>
+            <button class="nudge" data-dir="-1" title="Move A one ayah earlier">‹</button>
             <span class="at"></span>
-            <button class="nudge" data-dir="-1" title="Move A one ayah earlier">›</button>
+            <button class="nudge" data-dir="1" title="Move A one ayah later">›</button>
             <button class="clear" title="Remove A">×</button>
           </span>
         </div>
         <div class="loop-point" data-point="b">
           <button class="set" title="Loop end: set at the current ayah (B). Again on the same ayah removes it.">B</button>
           <span class="edit">
-            <button class="nudge" data-dir="1" title="Move B one ayah later">‹</button>
+            <button class="nudge" data-dir="-1" title="Move B one ayah earlier">‹</button>
             <span class="at"></span>
-            <button class="nudge" data-dir="-1" title="Move B one ayah earlier">›</button>
+            <button class="nudge" data-dir="1" title="Move B one ayah later">›</button>
             <button class="clear" title="Remove B">×</button>
           </span>
         </div>

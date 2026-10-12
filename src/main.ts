@@ -435,7 +435,6 @@ function bindControls(): void {
     goTo(chapter.pages[0], `${chapter.id}:1:1`);
   });
   ui.page.addEventListener('change', () => goTo(Number(ui.page.value)));
-  // Arabic books open right-to-left, so "next" is the left-hand arrow.
   ui.nextPage.addEventListener('click', () => goTo((engine.page?.page ?? 1) + 1));
   ui.prevPage.addEventListener('click', () => goTo((engine.page?.page ?? 1) - 1));
   ui.play.addEventListener('click', () => engine.toggle());
@@ -564,11 +563,11 @@ function bindControls(): void {
         if (practice.active) practice.toggleListening();
         else engine.toggle();
         break;
-      // Arabic reads right-to-left, so ← moves forward.
+      // → moves forward (next ayah), ← back.
       case 'ArrowLeft':
       case 'ArrowRight': {
         e.preventDefault();
-        const dir = e.key === 'ArrowLeft' ? 1 : -1;
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
         if (practice.active) {
           void engine.ayahTarget(dir).then((target) => target && practice.restartAt(target));
         } else void engine.stepAyah(dir);
