@@ -15,6 +15,7 @@ import {
   buildKeyframes,
   flattenSegments,
   lastStartedWord,
+  retimeHeldStarts,
   sample,
 } from './timeline';
 
@@ -83,7 +84,12 @@ interface PassRange {
 export class Engine {
   readonly audio = new Audio();
   page?: MushafPage;
+  /** The page after `page` once preloaded, so a hold across the page break is timed too. */
+  private nextPage?: MushafPage;
   private chapterAudio?: { reciter: number; data: ChapterAudio };
+  /** The surah's word timings as the segment data gives them. */
+  private segments: TimedWord[] = [];
+  /** `segments` with held idghām letters moved to their own word (see `retimeHeldStarts`). */
   private words: TimedWord[] = [];
   private keyframes: Keyframe[] = [];
   private restingKey?: string;
@@ -364,10 +370,10 @@ export class Engine {
       const data = this.chapterAudio!.data;
       const timing = data.timings.find((v) => v.verse_key === `${chapter}:${verse}`);
       let ms: number;
-      if (verse === 1 && position === 1) ms = 0; // include the basmala before ayah 1
-      else ms = this.words.find((w) => w.key === target.key)?.start ?? timing?.timestamp_from ?? 0;
       this.restingKey = target.key;
       this.rebuildKeyframes();
+      if (verse === 1 && position === 1) ms = 0; // include the basmala before ayah 1
+      else ms = this.words.find((w) => w.key === target.key)?.start ?? timing?.timestamp_from ?? 0;
       this.audio.currentTime = ms / 1000;
       this.audio.playbackRate = this.opts.rate;
       await this.audio.play();
@@ -389,7 +395,8 @@ export class Engine {
     if (current && current.reciter === this.opts.reciter && current.data.chapter === chapter) return;
     const data = await getChapterAudio(this.opts.reciter, chapter);
     this.chapterAudio = { reciter: this.opts.reciter, data };
-    this.words = flattenSegments(data.timings);
+    this.segments = flattenSegments(data.timings);
+    this.words = this.segments;
     this.keyframes = [];
     await new Promise<void>((resolve, reject) => {
       const done = () => {
@@ -431,6 +438,11 @@ export class Engine {
     if (pageNumber < PAGE_COUNT) {
       buildPage(pageNumber + 1, this.opts.script, this.chapters)
         .then((next) => {
+          if (this.page === page) {
+            this.nextPage = next;
+            // A resting dot (no keyframes) stays resting.
+            if (this.keyframes.length > 0) this.rebuildKeyframes();
+          }
           if (this.page === page && !next.el.isConnected) {
             next.el.classList.add('preload');
             this.stage.append(next.el);
@@ -450,6 +462,7 @@ export class Engine {
       this.keyframes = [];
       return;
     }
+    this.words = retimeHeldStarts(this.segments, (key) => page.words.get(key) ?? this.nextPage?.words.get(key));
     const markers = new Map<string, Box>();
     for (const ref of page.words.values()) {
       if (ref.kind === 'end') markers.set(ref.key.slice(0, ref.key.lastIndexOf(':')), ref.box);
