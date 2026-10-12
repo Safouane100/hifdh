@@ -30,6 +30,8 @@ interface Settings {
   colors: Partial<Record<Rule, string>>;
   range: RangeMode;
   repeat: number;
+  /** Settings format; see loadSettings. */
+  version: number;
 }
 
 const DEFAULTS: Settings = {
@@ -48,8 +50,9 @@ const DEFAULTS: Settings = {
   beep: true,
   peek: false,
   colors: {},
-  range: 'page',
+  range: 'surah',
   repeat: 3,
+  version: 3,
 };
 
 // v2: zoom became "magnify" relative to the whole-page fit.
@@ -57,7 +60,11 @@ const STORAGE_KEY = 'hifz-focus:settings:v2';
 
 function loadSettings(): Settings {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') };
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+    // Before version 3 the default range was "this page"; a stored value from
+    // then is just that old default, so move it to the new one.
+    if ((stored.version ?? 0) < 3) delete stored.range;
+    return { ...DEFAULTS, ...stored, version: 3 };
   } catch {
     return { ...DEFAULTS };
   }
@@ -337,7 +344,14 @@ function startPractice(): void {
   if (!from) return;
   document.body.classList.add('reciting');
   ui.practice.textContent = '■ Stop reciting';
-  void practice.start(from, looping ? loop.b!.verseKey : undefined);
+  void practice.start(from, looping ? loop.b!.verseKey : practiceEnd(from.verseKey));
+}
+
+/** Where reciting from `verseKey` stops without a loop: the surah's end when playing "the surah". */
+function practiceEnd(verseKey: string): string | undefined {
+  if (settings.range !== 'surah') return undefined;
+  const chapter = chapters[Number(verseKey.split(':')[0]) - 1];
+  return `${chapter.id}:${chapter.verses_count}`;
 }
 
 function stopPractice(): void {
