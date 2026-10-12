@@ -653,16 +653,17 @@ function bindControls(): void {
         break;
       case 'p':
       case 'P':
-        if (practice.active && practice.listening) stopPractice();
+        // P starts reciting; while reciting it stops; after a finished stretch it
+        // recites the same stretch again from its beginning.
+        if (practice.done) void practice.again();
+        else if (practice.active) stopPractice();
         else if (SPEECH_SUPPORTED) startPractice();
         else setStatus(SPEECH_UNSUPPORTED_REASON, true);
         break;
       case 'h':
-      case 'H': {
-        const word = practice.hint();
-        if (word) flash(word, 1500);
+      case 'H':
+        practice.hint();
         break;
-      }
       default:
         return;
     }

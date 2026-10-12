@@ -43,6 +43,8 @@ export class Practice {
   private readonly listener: Listener;
   private expected: Expected[] = [];
   private indexOf = new Map<string, number>();
+  /** Where this session began, so "again" starts over from there. */
+  private from?: VersePoint;
   private until?: string;
   private endOrder = Infinity;
   /** Next page to append to `expected`, or 0 when everything is loaded. */
@@ -98,6 +100,16 @@ export class Practice {
     return this.listener.listening;
   }
 
+  /** The stretch has been recited to its end (the summary is showing). */
+  get done(): boolean {
+    return this.active && this.finished;
+  }
+
+  /** Recite the same stretch again from where this session began. Call from a key / click handler. */
+  async again(): Promise<void> {
+    if (this.from) await this.start(this.from, this.until);
+  }
+
   /**
    * Begin reciting from the start of ayah `from`; stop after ayah `until` if
    * given. Call it straight from the click / key handler: the microphone is
@@ -106,6 +118,7 @@ export class Practice {
   async start(from: VersePoint, until?: string): Promise<void> {
     this.reset();
     this.active = true;
+    this.from = from;
     this.until = until;
     this.endOrder = until ? orderOfKey(`${until}:999`) : Infinity;
     this.engine.audio.pause();
@@ -156,13 +169,11 @@ export class Practice {
     await this.follow();
   }
 
-  /** Reveal the next word for someone who is stuck. */
-  hint(): string | undefined {
-    const next = this.expected[this.shown];
-    if (!this.active || !next) return undefined;
+  /** Reveal the next word in its place on the page, for someone who is stuck. */
+  hint(): void {
+    if (!this.active || !this.expected[this.shown]) return;
     this.hinted.add(this.shown);
     this.paint();
-    return next.uthmani;
   }
 
   /** Apply hidden / revealed / mistake classes to a page's words. */
@@ -293,6 +304,7 @@ export class Practice {
         : `${mistakes} possible mistake${mistakes === 1 ? '' : 's'} (${counts.missed} skipped, ${counts.wrong} different)`,
     ];
     if (this.hinted.size) parts.push(`${this.hinted.size} hint${this.hinted.size === 1 ? '' : 's'}`);
-    this.events.status(`Finished: ${parts.join(', ')}. Press P to recite again, Esc to leave.`, false);
+    const start = this.from ? ` from ${this.label(`${this.from.verseKey}:1`)}` : '';
+    this.events.status(`Finished: ${parts.join(', ')}. Press P to recite it again${start}, Esc to leave.`, false);
   }
 }

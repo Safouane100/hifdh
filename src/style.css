@@ -184,9 +184,14 @@ input {
   visibility: visible;
   opacity: 0.12;
 }
-.practicing .w.rec-hint {
+/*
+ * A hinted word appears in its own place, a little faded so it reads as a hint.
+ * These selectors must out-rank the "hide / fade upcoming words" rules above.
+ */
+.practicing .w.rec-hint:not(.said),
+.peek-ahead .practicing .w.rec-hint:not(.said) {
   visibility: visible;
-  opacity: 0.45;
+  opacity: 0.6;
 }
 .w.rec-missed,
 .w.rec-wrong {
