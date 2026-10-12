@@ -2,7 +2,7 @@ import { PAGE_COUNT, type Chapter, getChapters, getReciters, parseVerseKey } fro
 import { Engine, type Loop, type PlayState, type RangeMode } from './engine';
 import { type Script, type Theme, setTajweedColours, v4Build } from './fonts';
 import { type Rule, ruleColour } from './tajweed';
-import type { MushafPage } from './mushaf';
+import type { MushafPage, WordRef } from './mushaf';
 import { Practice } from './practice';
 import { SPEECH_SUPPORTED, SPEECH_UNSUPPORTED_REASON } from './listener';
 import type { Point, TrackingMode } from './timeline';
@@ -196,6 +196,56 @@ const MAX_MAGNIFY = 5;
 /** Must match `.mushaf-page { font-size }` in style.css. */
 const PAGE_FONT_PX = 32;
 
+// --- Word popover -----------------------------------------------------------
+
+let popWord: WordRef | undefined;
+let pointer = { x: -1, y: -1 };
+const popover = {
+  el: $<HTMLDivElement>('word-pop'),
+  arabic: document.querySelector<HTMLElement>('#word-pop .pop-arabic')!,
+  translit: document.querySelector<HTMLElement>('#word-pop .pop-translit')!,
+  translation: document.querySelector<HTMLElement>('#word-pop .pop-translation')!,
+};
+
+/** The visible word under a screen point (hidden, not-yet-recited words don't count). */
+function wordAt(x: number, y: number): WordRef | undefined {
+  const key = document.elementFromPoint(x, y)?.closest<HTMLElement>('.w:not(.end)')?.dataset.k;
+  return key ? engine.page?.words.get(key) : undefined;
+}
+
+/** Show a word's translation like quran.com's hover popover; only pointer movement calls this. */
+function showPopover(word: WordRef | undefined): void {
+  if (word === popWord) return;
+  popWord = word?.translation ? word : undefined;
+  popover.el.hidden = !popWord;
+  if (!popWord) return;
+  popover.arabic.textContent = popWord.uthmani;
+  popover.translit.textContent = popWord.transliteration;
+  popover.translation.textContent = popWord.translation;
+  placePopover();
+}
+
+/**
+ * Keep the popover on its word as the page moves. While playing the page slides
+ * under a still pointer; once the word has left the pointer the popover closes
+ * rather than jumping to whatever passes underneath.
+ */
+function placePopover(): void {
+  if (!popWord) return;
+  if (wordAt(pointer.x, pointer.y) !== popWord) {
+    showPopover(undefined);
+    return;
+  }
+  const r = popWord.el.getBoundingClientRect();
+  const { offsetWidth: w, offsetHeight: h } = popover.el;
+  const gap = 10;
+  const below = r.top - h - gap < 8;
+  const top = below ? r.bottom + gap : r.top - h - gap;
+  const left = Math.min(window.innerWidth - w - 8, Math.max(8, r.left + r.width / 2 - w / 2));
+  popover.el.style.transform = `translate(${left}px, ${top}px)`;
+  popover.el.classList.toggle('below', below);
+}
+
 function renderFrame(now: number): void {
   const dt = Math.min(now - lastFrame, 100);
   lastFrame = now;
@@ -224,6 +274,7 @@ function renderFrame(now: number): void {
     active?.classList.add('active');
     highlighted = active;
   }
+  placePopover();
   requestAnimationFrame(renderFrame);
 }
 
@@ -477,6 +528,12 @@ function bindControls(): void {
   }
 
   document.addEventListener('mousemove', showControls);
+  document.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    pointer = { x: e.clientX, y: e.clientY };
+    showPopover(wordAt(pointer.x, pointer.y));
+  });
+  document.documentElement.addEventListener('pointerleave', () => showPopover(undefined));
   document.addEventListener('keydown', (e) => {
     const target = e.target as HTMLElement;
     if (target.matches('input[type=number], select') && e.key !== 'Escape') return;

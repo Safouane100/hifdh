@@ -31,6 +31,7 @@ npm test           # tajweed colouring specs
 - Choosing a surah rests the dot on its first word (with the basmala read first), even when it starts part-way down a page; repeats go back to where you started, not to the top of the page.
 - **Settings:** letter-glide vs word-step tracking, motion smoothing, dot above or on the letter, theme, tajweed colours on/off, current-word highlight, edge dimming, auto-hiding controls.
 - **Tajweed colours** opens the colour key. The colours are quran.com's, but printed tajweed mushafs don't share one colour scheme: this app shows madd munfaṣil in pink (quran.com's font draws it red, like muttaṣil), and you can click any rule's colour to change it to match your mushaf; your colours are saved and apply in every theme (except Firefox's dark mode, which uses fixed-colour fonts), and **Reset colours** restores the defaults.
+- **Hover over a word** to see it with its transliteration and English meaning (quran.com's word-by-word translation). While the page is moving, the popover closes once its word slides away from the pointer; words still hidden while reciting show nothing.
 
 The fonts draw each word as a single glyph, so "letter" tracking is interpolated: within each word's timestamp the focus slides from its right edge to its left edge at a constant rate. It follows pronunciation closely but it isn't timed per letter.
 

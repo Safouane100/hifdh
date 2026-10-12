@@ -21,6 +21,9 @@ export interface WordRef {
   uthmani: string;
   /** Plain spelling, for matching what a speech recogniser hears. */
   plain: string;
+  /** English word-by-word translation and transliteration, for the hover popover. */
+  translation: string;
+  transliteration: string;
 }
 
 const LINES_PER_PAGE = 15;
@@ -177,6 +180,8 @@ export class MushafPage {
           box: { l: 0, r: 0, cy: 0 },
           uthmani: word.text_uthmani,
           plain: word.text_imlaei_simple ?? '',
+          translation: word.translation?.text ?? '',
+          transliteration: word.transliteration?.text ?? '',
         };
         span.dataset.k = ref.key;
         this.words.set(ref.key, ref);

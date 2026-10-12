@@ -29,6 +29,9 @@ export interface Word {
   text_uthmani_tajweed: string;
   /** Plain modern spelling without diacritics (e.g. "اانذرتهم"), for matching speech. */
   text_imlaei_simple: string;
+  /** quran.com's English word-by-word translation (returned by default). */
+  translation?: { text: string | null };
+  transliteration?: { text: string | null };
 }
 
 export interface Verse {
