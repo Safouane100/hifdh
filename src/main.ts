@@ -208,6 +208,15 @@ const MAX_MAGNIFY = 5;
 /** Must match `.mushaf-page { font-size }` in style.css. */
 const PAGE_FONT_PX = 32;
 
+// The page layer has `will-change: transform` so it glides as one bitmap with
+// subpixel precision, but Chrome then keeps that bitmap at the scale it was
+// painted at. Once the scale (zoom, window size) has held for a moment, drop
+// `will-change` for one frame so the page is repainted sharp at the new scale.
+const REPAINT_AFTER_MS = 250;
+let lastScale = 0;
+let scaleSince = 0;
+let paintedScale = 0;
+
 // --- Word popover -----------------------------------------------------------
 
 let popWord: WordRef | undefined;
@@ -279,6 +288,14 @@ function renderFrame(now: number): void {
   // "above": the dot sits just over the letter so it never covers the text.
   const cy = window.innerHeight / 2 + (settings.dot === 'above' ? PAGE_FONT_PX * 0.8 * scale : 0);
   ui.pager.style.transform = `translate3d(${cx - focus.x * scale}px, ${cy - focus.y * scale}px, 0) scale(${scale})`;
+  if (scale !== lastScale) {
+    lastScale = scale;
+    scaleSince = now;
+  } else if (scale !== paintedScale && now - scaleSince > REPAINT_AFTER_MS) {
+    paintedScale = scale;
+    ui.pager.style.willChange = 'auto';
+    requestAnimationFrame(() => (ui.pager.style.willChange = ''));
+  }
 
   const active = frame.activeKey ? engine.page?.words.get(frame.activeKey)?.el : undefined;
   if (active !== highlighted) {
