@@ -73,6 +73,11 @@ input {
   position: fixed;
   inset: 0;
   overflow: hidden;
+  /* touch.ts handles taps, swipes and pinches; the browser must not scroll, zoom or select. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 #pager {
   position: absolute;
@@ -284,6 +289,32 @@ input {
   font-size: 14.5px;
   font-weight: 600;
 }
+/* Word menu: a long-press on a word (touch screens), below the top bar. */
+#word-menu {
+  position: fixed;
+  left: 50%;
+  top: 64px;
+  z-index: 7;
+  transform: translateX(-50%);
+  width: min(320px, 92vw);
+  padding: 10px 12px 12px;
+  border-radius: 10px;
+  text-align: center;
+  color: #fff;
+  background: rgba(20, 22, 26, 0.94);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.word-actions {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+#word-menu button {
+  padding: 8px 10px;
+  font-size: 15px;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
 /* Speed readout: above the dot so it never covers the text being read. */
 #flash {
   position: absolute;
@@ -364,9 +395,22 @@ input {
   font-weight: 600;
   font-size: 16px;
 }
-.hint-keys {
+.hint-keys,
+.hint-touch {
   color: var(--muted);
   font-size: 12.5px;
+}
+/* Phones and tablets get the gestures instead of the keys. */
+#hint .hint-touch {
+  display: none;
+}
+@media (hover: none) and (pointer: coarse) {
+  #hint .hint-keys {
+    display: none;
+  }
+  #hint .hint-touch {
+    display: block;
+  }
 }
 kbd {
   padding: 0 5px;
@@ -489,6 +533,13 @@ button.play {
 }
 button.text {
   color: var(--ink);
+}
+/* Hint: only while reciting, when there is a next word to reveal. */
+button.reveal {
+  display: none;
+}
+.reciting button.reveal {
+  display: inline-block;
 }
 .loop {
   display: inline-flex;

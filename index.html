@@ -27,8 +27,22 @@
         <p class="hint-keys"><kbd>Space</kbd> play / pause · <kbd>→</kbd> next ayah · <kbd>←</kbd> start of ayah / previous ayah · <kbd>Shift</kbd>+<kbd>→</kbd> <kbd>←</kbd> next / previous surah · <kbd>&lt;</kbd> <kbd>&gt;</kbd> slower / faster · <kbd>PgDn</kbd> <kbd>PgUp</kbd> turn page · <kbd>+</kbd> <kbd>−</kbd> zoom · click a word to start there</p>
         <p class="hint-keys">Loop: <kbd>A</kbd> / <kbd>B</kbd> set the loop start / end at the current ayah (press again to remove) · <kbd>Shift</kbd>+click a word sets A, <kbd>Alt</kbd>+click sets B · <kbd>C</kbd> clears the loop</p>
         <p class="hint-keys">Recite from memory: <kbd>P</kbd> starts listening from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · <kbd>H</kbd> shows the next word · <kbd>←</kbd> recite this ayah again · <kbd>Space</kbd> pause · <kbd>Esc</kbd> stop</p>
+        <p class="hint-touch">Tap the page to play / pause · swipe left for the next ayah, right for the start of this one / the previous one · pinch to zoom</p>
+        <p class="hint-touch">Hold a word for its meaning, to play from it, or to make it the loop's start (A) or end (B)</p>
+        <p class="hint-touch">Recite from memory: 🎙 Recite listens from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · 💡 Hint shows the next word · swipe right to recite this ayah again · tap to pause</p>
       </div>
     </main>
+
+    <div id="word-menu" role="dialog" aria-label="Word" hidden>
+      <div class="pop-arabic" lang="ar" dir="rtl"></div>
+      <div class="pop-translit"></div>
+      <div class="pop-translation"></div>
+      <div class="word-actions">
+        <button class="text" data-act="play"></button>
+        <button class="text" data-act="a"></button>
+        <button class="text" data-act="b"></button>
+      </div>
+    </div>
 
     <header id="topbar" class="bar">
       <div class="brand">Hifz Focus</div>
@@ -56,8 +70,11 @@
     </header>
 
     <footer id="bottombar" class="bar">
+      <button id="prev-ayah" class="icon" title="Start of ayah / previous ayah (←)" aria-label="Start of ayah, or previous ayah">⏮&#xFE0E;</button>
       <button id="play" class="play" aria-label="Play">▶</button>
+      <button id="next-ayah" class="icon" title="Next ayah (→)" aria-label="Next ayah">⏭&#xFE0E;</button>
       <button id="practice" class="text recite" title="Recite from memory: the page follows your voice and hides what comes next (P)">🎙 Recite</button>
+      <button id="reveal" class="text reveal" title="Show the next word (H)">💡 Hint</button>
       <label class="field">
         <span>Play</span>
         <select id="range">
