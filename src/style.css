@@ -79,7 +79,11 @@ input {
   top: 0;
   left: 0;
   transform-origin: 0 0;
-  will-change: transform;
+  /*
+   * No `will-change: transform`: Chrome keeps such a layer at the scale it was
+   * first painted at, so zooming in after load blurred the text. The
+   * translate3d() set every frame keeps the page on its own layer anyway.
+   */
 }
 /*
  * One printed page: running head, a fixed 15-line text block where every line
