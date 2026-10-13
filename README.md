@@ -21,6 +21,8 @@ npm run build      # static site in dist/, host anywhere
 npm test           # tajweed colouring and focus timing specs
 ```
 
+It's published at https://safouane100.github.io/hifdh/: every push to `main` runs the tests, builds, and deploys `dist/` to GitHub Pages (`.github/workflows/pages.yml`). The build uses relative asset paths, so it works under that `/hifdh/` path or any other.
+
 ## Using it
 
 - Pick a surah or page and a reciter, press **Space** (or ▶), and fix your eyes on the dot.
