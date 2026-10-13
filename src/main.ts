@@ -5,6 +5,7 @@ import { type Rule, ruleColour } from './tajweed';
 import type { MushafPage, WordRef } from './mushaf';
 import { Practice } from './practice';
 import { SPEECH_SUPPORTED, SPEECH_UNSUPPORTED_REASON } from './listener';
+import { bindGestures } from './touch';
 import type { Point, TrackingMode } from './timeline';
 
 interface Settings {
@@ -79,6 +80,7 @@ const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const ui = {
   root: document.documentElement,
+  viewport: $<HTMLElement>('viewport'),
   pager: $<HTMLDivElement>('pager'),
   surah: $<HTMLSelectElement>('surah'),
   page: $<HTMLInputElement>('page'),
@@ -89,6 +91,9 @@ const ui = {
   where: $<HTMLDivElement>('where'),
   reciter: $<HTMLSelectElement>('reciter'),
   play: $<HTMLButtonElement>('play'),
+  prevAyah: $<HTMLButtonElement>('prev-ayah'),
+  nextAyah: $<HTMLButtonElement>('next-ayah'),
+  reveal: $<HTMLButtonElement>('reveal'),
   range: $<HTMLSelectElement>('range'),
   repeat: $<HTMLSelectElement>('repeat'),
   pass: $<HTMLSpanElement>('pass'),
@@ -116,6 +121,7 @@ const ui = {
   beep: $<HTMLInputElement>('beep'),
   peek: $<HTMLInputElement>('peek'),
   practice: $<HTMLButtonElement>('practice'),
+  wordMenu: $<HTMLDivElement>('word-menu'),
 };
 
 const RULES: { id: Rule; name: string; desc: string }[] = [
@@ -265,6 +271,38 @@ function placePopover(): void {
   const left = Math.min(window.innerWidth - w - 8, Math.max(8, r.left + r.width / 2 - w / 2));
   popover.el.style.transform = `translate(${left}px, ${top}px)`;
   popover.el.classList.toggle('below', below);
+}
+
+// --- Word menu: a long-press on a touch screen ---------------------------------
+
+/** The word the menu is open for. */
+let menuWord: WordRef | undefined;
+const wordMenu = {
+  arabic: ui.wordMenu.querySelector<HTMLElement>('.pop-arabic')!,
+  translit: ui.wordMenu.querySelector<HTMLElement>('.pop-translit')!,
+  translation: ui.wordMenu.querySelector<HTMLElement>('.pop-translation')!,
+  play: ui.wordMenu.querySelector<HTMLButtonElement>('[data-act="play"]')!,
+  a: ui.wordMenu.querySelector<HTMLButtonElement>('[data-act="a"]')!,
+  b: ui.wordMenu.querySelector<HTMLButtonElement>('[data-act="b"]')!,
+};
+
+/** What hovering and clicking do with a mouse: the word's meaning, start from it, set the loop at its ayah. */
+function openWordMenu(word: WordRef): void {
+  menuWord = word;
+  const verseKey = word.key.slice(0, word.key.lastIndexOf(':'));
+  wordMenu.arabic.textContent = word.uthmani;
+  wordMenu.translit.textContent = word.transliteration;
+  wordMenu.translation.textContent = word.translation;
+  wordMenu.play.textContent = practice.active ? '🎙 Recite from this ayah' : '▶ Play from here';
+  wordMenu.a.textContent = loop.a?.verseKey === verseKey ? 'Remove loop start (A)' : 'Loop from this ayah (A)';
+  wordMenu.b.textContent = loop.b?.verseKey === verseKey ? 'Remove loop end (B)' : 'Loop to this ayah (B)';
+  ui.wordMenu.hidden = false;
+  navigator.vibrate?.(15);
+}
+
+function closeWordMenu(): void {
+  menuWord = undefined;
+  ui.wordMenu.hidden = true;
 }
 
 function renderFrame(now: number): void {
@@ -476,6 +514,41 @@ function showControls(): void {
   }, 2500);
 }
 
+// --- Actions shared by keys, buttons and touch gestures ----------------------
+
+/** Space / a tap: play or pause; while reciting, pause or resume listening. */
+function togglePlay(): void {
+  if (practice.active) practice.toggleListening();
+  else engine.toggle();
+}
+
+/** → / ← / a swipe / ⏭ ⏮: next ayah, or the start of this one (the previous one if already there); while reciting, recite from there. */
+function stepAyah(dir: 1 | -1): void {
+  if (practice.active) void engine.ayahTarget(dir).then((target) => target && practice.restartAt(target));
+  else void engine.stepAyah(dir);
+}
+
+/** Start from a clicked word; while reciting, recite again from its ayah. */
+function startFromWord(key: string): void {
+  const page = engine.page;
+  if (!page) return;
+  if (practice.active) void practice.restartAt({ verseKey: key.slice(0, key.lastIndexOf(':')), page: page.page });
+  else void engine.start(page.page, key);
+}
+
+/** Set the loop start / end at an ayah on the page, or remove it if it is already there. */
+function toggleLoopPoint(which: 'a' | 'b', verseKey: string): void {
+  const page = engine.page;
+  if (!page) return;
+  engine.setPoint(which, loop[which]?.verseKey === verseKey ? undefined : { verseKey, page: page.page });
+}
+
+/** Zoom, kept to the slider's range; callers save once the change is done. */
+function setMagnify(magnify: number): void {
+  settings.magnify = Math.min(MAX_MAGNIFY, Math.max(1, magnify));
+  ui.zoom.value = String(settings.magnify);
+}
+
 // --- Wiring ---------------------------------------------------------------
 
 function bindControls(): void {
@@ -563,21 +636,48 @@ function bindControls(): void {
   });
 
   ui.pager.addEventListener('click', (e) => {
-    const word = (e.target as HTMLElement).closest<HTMLElement>('.w');
-    const page = engine.page;
-    if (!word?.dataset.k || !page) return;
-    const [c, v] = word.dataset.k.split(':');
-    const verseKey = `${c}:${v}`;
+    const key = (e.target as HTMLElement).closest<HTMLElement>('.w')?.dataset.k;
+    if (!key) return;
     // Shift+click / Alt(Option)+click set the loop start / end at that ayah.
     if (e.shiftKey || e.altKey) {
       e.preventDefault();
-      const which = e.shiftKey ? 'a' : 'b';
-      engine.setPoint(which, loop[which]?.verseKey === verseKey ? undefined : { verseKey, page: page.page });
-      return;
-    }
-    // While reciting, clicking a word means "let me recite again from this ayah".
-    if (practice.active) void practice.restartAt({ verseKey, page: page.page });
-    else void engine.start(page.page, word.dataset.k);
+      toggleLoopPoint(e.shiftKey ? 'a' : 'b', key.slice(0, key.lastIndexOf(':')));
+    } else startFromWord(key);
+  });
+  ui.prevAyah.addEventListener('click', () => stepAyah(-1));
+  ui.nextAyah.addEventListener('click', () => stepAyah(1));
+  ui.reveal.addEventListener('click', () => practice.hint());
+
+  ui.wordMenu.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    const word = menuWord;
+    if (!act || !word) return;
+    closeWordMenu();
+    if (act === 'play') startFromWord(word.key);
+    else toggleLoopPoint(act === 'a' ? 'a' : 'b', word.key.slice(0, word.key.lastIndexOf(':')));
+  });
+  let pinchFrom = 1;
+  bindGestures(ui.viewport, {
+    tap: () => {
+      // A tap away from the open menu just closes it.
+      if (menuWord) closeWordMenu();
+      else togglePlay();
+      showControls();
+    },
+    longPress: (x, y) => {
+      const word = wordAt(x, y);
+      if (word) openWordMenu(word);
+    },
+    swipe: (dir) => {
+      closeWordMenu();
+      stepAyah(dir);
+    },
+    pinchStart: () => {
+      closeWordMenu();
+      pinchFrom = settings.magnify;
+    },
+    pinch: (ratio) => setMagnify(pinchFrom * ratio),
+    pinchEnd: save,
   });
 
   for (const pointEl of ui.loopPoints) {
@@ -599,18 +699,12 @@ function bindControls(): void {
   document.addEventListener('keydown', (e) => {
     const target = e.target as HTMLElement;
     if (target.matches('input[type=number], select') && e.key !== 'Escape') return;
-    const zoomBy = (f: number) => {
-      settings.magnify = Math.min(MAX_MAGNIFY, Math.max(1, settings.magnify * f));
-      ui.zoom.value = String(settings.magnify);
-      save();
-    };
     // Letter shortcuts must not swallow browser shortcuts like Cmd/Ctrl+A.
     if (e.metaKey || e.ctrlKey) return;
     switch (e.key) {
       case ' ':
         e.preventDefault();
-        if (practice.active) practice.toggleListening();
-        else engine.toggle();
+        togglePlay();
         break;
       // → moves forward (next ayah), ← back. With Shift: by surah.
       case 'ArrowLeft':
@@ -618,9 +712,7 @@ function bindControls(): void {
         e.preventDefault();
         const dir = e.key === 'ArrowRight' ? 1 : -1;
         if (e.shiftKey) goToSurah(dir);
-        else if (practice.active) {
-          void engine.ayahTarget(dir).then((target) => target && practice.restartAt(target));
-        } else void engine.stepAyah(dir);
+        else stepAyah(dir);
         break;
       }
       case 'PageDown':
@@ -643,11 +735,13 @@ function bindControls(): void {
         break;
       case '+':
       case '=':
-        zoomBy(1.1);
+        setMagnify(settings.magnify * 1.1);
+        save();
         break;
       case '-':
       case '_':
-        zoomBy(1 / 1.1);
+        setMagnify(settings.magnify / 1.1);
+        save();
         break;
       // YouTube's speed keys, stepping through the Speed dropdown's own values.
       case '>':
@@ -666,6 +760,7 @@ function bindControls(): void {
       case 'Escape':
         ui.settingsPanel.hidden = true;
         ui.legendPanel.hidden = true;
+        closeWordMenu();
         if (practice.active) stopPractice();
         break;
       case 'p':
