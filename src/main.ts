@@ -706,6 +706,30 @@ function syncInputs(): void {
   ui.peek.checked = settings.peek;
 }
 
+// --- Screen wake lock -------------------------------------------------------
+
+let wakeLock: WakeLockSentinel | undefined;
+let wakeLockPending = false;
+
+/**
+ * Keep the screen on while the site is visible: you watch the dot without
+ * touching the screen, so a phone would otherwise dim and lock. The browser
+ * releases the lock whenever the tab is hidden (and may refuse it, e.g. before
+ * any interaction), so this is called again on return and on every tap or key.
+ */
+async function keepScreenAwake(): Promise<void> {
+  if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  if (wakeLockPending || (wakeLock && !wakeLock.released)) return;
+  wakeLockPending = true;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+  } catch {
+    // Refused for now; the next tap, key or return to the tab asks again.
+  } finally {
+    wakeLockPending = false;
+  }
+}
+
 async function main(): Promise<void> {
   applyLook();
   syncInputs();
@@ -748,6 +772,10 @@ async function main(): Promise<void> {
       ui.practice.title = SPEECH_UNSUPPORTED_REASON;
     }
     bindControls();
+    void keepScreenAwake();
+    document.addEventListener('visibilitychange', () => void keepScreenAwake());
+    document.addEventListener('pointerdown', () => void keepScreenAwake());
+    document.addEventListener('keydown', () => void keepScreenAwake());
     requestAnimationFrame(renderFrame);
     // Come back to the ayah you were on, not the top of its page (which may be
     // the end of the previous surah).
