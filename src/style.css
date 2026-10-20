@@ -160,12 +160,32 @@ input {
   font-size: 1.3em;
 }
 .line {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
   height: 1.85em;
   flex: none;
   white-space: nowrap;
+}
+/*
+ * Ghost of the next line's first word, past the end of this line (mushaf.ts
+ * sets `right`). Only the one by the line being read shows, and only with the
+ * preview setting on; never while reciting, where upcoming words are hidden.
+ */
+.ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  margin-right: 0.3em;
+  opacity: 0.35;
+  visibility: hidden;
+  pointer-events: none;
+}
+.line-ghost .mushaf-page:not(.practicing) .ghost.show {
+  visibility: visible;
 }
 .line.centered {
   justify-content: center;

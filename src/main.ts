@@ -23,6 +23,8 @@ interface Settings {
   smoothing: number;
   dot: 'above' | 'on';
   highlight: boolean;
+  /** A faded preview of the next line's first word past the end of the line being read. */
+  ghost: boolean;
   vignette: boolean;
   autohide: boolean;
   /** Play a tone when a recitation mistake is heard. */
@@ -49,6 +51,7 @@ const DEFAULTS: Settings = {
   smoothing: 90,
   dot: 'above',
   highlight: false,
+  ghost: true,
   vignette: false,
   autohide: true,
   beep: true,
@@ -111,6 +114,7 @@ const ui = {
   resetColours: $<HTMLButtonElement>('reset-colours'),
   loopPoints: [...document.querySelectorAll<HTMLElement>('.loop-point')],
   mode: $<HTMLSelectElement>('mode'),
+  ghost: $<HTMLInputElement>('ghost'),
   smoothing: $<HTMLInputElement>('smoothing'),
   smoothingOut: $<HTMLOutputElement>('smoothing-out'),
   dotPlace: $<HTMLSelectElement>('dot-place'),
@@ -176,6 +180,7 @@ function applyLook(): void {
   document.body.classList.toggle('show-highlight', settings.highlight);
   document.body.classList.toggle('vignette', settings.vignette);
   document.body.classList.toggle('peek-ahead', settings.peek);
+  document.body.classList.toggle('line-ghost', settings.ghost);
   setTajweedColours(settings.theme, settings.colors);
   renderLegend();
 }
@@ -208,6 +213,8 @@ let chapters: Chapter[] = [];
 let focus: Point | undefined;
 let lastFrame = performance.now();
 let highlighted: HTMLElement | undefined;
+/** The ghost word shown past the end of the line being read. */
+let shownGhost: HTMLElement | undefined;
 /** Unscaled size of the visible page; every page has the same fixed size. */
 let pageSize = { w: 1, h: 1 };
 const MAX_MAGNIFY = 5;
@@ -341,6 +348,17 @@ function renderFrame(now: number): void {
     highlighted?.classList.remove('active');
     active?.classList.add('active');
     highlighted = active;
+  }
+  // The preview past the end of the line being read.
+  const page = engine.page;
+  const activeRef = frame.activeKey ? page?.words.get(frame.activeKey) : undefined;
+  if (page && activeRef) {
+    const ghost = page.ghostOnLine.get(activeRef.line);
+    if (ghost !== shownGhost) {
+      shownGhost?.classList.remove('show');
+      ghost?.classList.add('show');
+      shownGhost = ghost;
+    }
   }
   syncWhere();
   placePopover();
@@ -589,6 +607,7 @@ function bindControls(): void {
     settings.smoothing = Number(ui.smoothing.value);
     ui.smoothingOut.value = `${settings.smoothing} ms`;
     save();
+    engine.setSmoothing(settings.smoothing);
   });
   ui.dotPlace.addEventListener('change', () => {
     settings.dot = ui.dotPlace.value as Settings['dot'];
@@ -609,7 +628,7 @@ function bindControls(): void {
     applyLook();
     void engine.reconfigure({ script: scriptOf(settings.tajweed) });
   });
-  const bindCheck = (input: HTMLInputElement, key: 'highlight' | 'vignette' | 'autohide' | 'beep' | 'peek') => {
+  const bindCheck = (input: HTMLInputElement, key: 'highlight' | 'ghost' | 'vignette' | 'autohide' | 'beep' | 'peek') => {
     input.addEventListener('change', () => {
       settings[key] = input.checked;
       save();
@@ -617,6 +636,7 @@ function bindControls(): void {
     });
   };
   bindCheck(ui.highlight, 'highlight');
+  bindCheck(ui.ghost, 'ghost');
   bindCheck(ui.vignette, 'vignette');
   bindCheck(ui.autohide, 'autohide');
   bindCheck(ui.beep, 'beep');
@@ -790,6 +810,7 @@ function syncInputs(): void {
   ui.rate.value = String(settings.rate);
   ui.zoom.value = String(settings.magnify);
   ui.mode.value = settings.mode;
+  ui.ghost.checked = settings.ghost;
   ui.smoothing.value = String(settings.smoothing);
   ui.smoothingOut.value = `${settings.smoothing} ms`;
   ui.dotPlace.value = settings.dot;
@@ -849,6 +870,7 @@ async function main(): Promise<void> {
         reciter: settings.reciter,
         script: scriptOf(settings.tajweed),
         mode: settings.mode,
+        smoothing: settings.smoothing,
         rate: settings.rate,
         range: settings.range,
         repeat: settings.repeat,
