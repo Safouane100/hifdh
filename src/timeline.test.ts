@@ -60,3 +60,33 @@ it('83:3 أَو وَّزَنُوهُمْ: a word opening with a shadda that is n
   ];
   expect(retimeHeldStarts(words, spokenOf)).toEqual(words);
 });
+
+it('83:24 تَعْرِفُ فِى | وُجُوهِهِمْ (“it hesitates halfway to the next line, goes back, then goes on”): never heads back to the line it left', () => {
+  // Minshawi (id 9) pauses on the ayah number after 83:24; the line breaks mid-ayah, after فِى.
+  const timings = [
+    { verse_key: '83:24', timestamp_from: 170550, timestamp_to: 178070, segments: [[1, 170550, 171880], [2, 171880, 172600], [3, 172600, 174230], [4, 174230, 175490], [5, 175490, 177365]] },
+    { verse_key: '83:25', timestamp_from: 178070, timestamp_to: 184130, segments: [[1, 178070, 179550]] },
+  ] as { verse_key: string; timestamp_from: number; timestamp_to: number; segments: [number, number, number][] }[];
+  const boxes: Record<string, Box> = {
+    '83:24:1': { l: 500, r: 600, cy: 8 },
+    '83:24:2': { l: 400, r: 480, cy: 8 },
+    '83:24:3': { l: 860, r: 1000, cy: 9 },
+    '83:24:4': { l: 700, r: 840, cy: 9 },
+    '83:24:5': { l: 540, r: 680, cy: 9 },
+  };
+  const keyframes = buildKeyframes({
+    words: timings.flatMap((v) => v.segments.map(([p, start, end]) => ({ key: `${v.verse_key}:${p}`, start, end }))),
+    timings,
+    boxOf: (key) => boxes[key],
+    markerOf: (verseKey) => (verseKey === '83:24' ? { l: 500, r: 530, cy: 9 } : undefined),
+    mode: 'glide',
+    lead: 90,
+  });
+  let lowest = 8;
+  for (let t = 171880; t <= 172800; t += 5) {
+    const y = sample(keyframes, t)!.y;
+    expect(y).toBeGreaterThanOrEqual(lowest);
+    lowest = y;
+  }
+  expect(lowest).toBe(9);
+});

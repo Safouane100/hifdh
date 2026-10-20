@@ -152,11 +152,14 @@ export function buildKeyframes(src: KeyframeSources): Keyframe[] {
   for (const w of src.words) {
     const box = src.boxOf(w.key);
     if (!box) continue;
+    const verseKey = w.key.slice(0, w.key.lastIndexOf(':'));
     const newLine = prev !== undefined && prev.box.cy !== box.cy;
     let last: Keyframe;
     if (newLine) {
       let arrive = w.start - lead;
-      if (!restsOnMarker.has(prev!.verseKey)) {
+      // Coming from the previous ayah's number, which the marker keyframes leave on time.
+      const fromMarker = prev!.verseKey !== verseKey && restsOnMarker.has(prev!.verseKey);
+      if (!fromMarker) {
         const leave = arrive - LINE_RETURN_MS;
         if (leave >= prev!.end) {
           kfs.push({ t: leave, x: endX(prev!.box), y: prev!.box.cy });
@@ -174,7 +177,7 @@ export function buildKeyframes(src: KeyframeSources): Keyframe[] {
     } else {
       last = span(box, w.start, w.end);
     }
-    prev = { box, start: w.start, end: w.end, verseKey: w.key.slice(0, w.key.lastIndexOf(':')), last };
+    prev = { box, start: w.start, end: w.end, verseKey, last };
   }
 
   return kfs.sort((a, b) => a.t - b.t);
