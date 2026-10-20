@@ -262,6 +262,8 @@ export class Engine {
   setRate(rate: number): void {
     this.opts.rate = rate;
     this.audio.playbackRate = rate;
+    // Line changes lead by the smoothing time in audio time, which depends on the speed.
+    if (this.keyframes.length > 0) this.rebuildKeyframes();
   }
 
   setMode(mode: TrackingMode): void {
@@ -485,7 +487,8 @@ export class Engine {
       // Most reciters say the basmala before ayah 1; walk the basmala line meanwhile.
       preroll: basmala && firstStart > 800 ? { box: basmala.box, end: firstStart - 150 } : undefined,
       mode: this.opts.mode,
-      lead: this.opts.smoothing,
+      // Smoothing lags in real time; keyframes are in audio time, which runs `rate` times faster.
+      lead: this.opts.smoothing * this.opts.rate,
     });
   }
 
