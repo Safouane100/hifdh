@@ -84,6 +84,12 @@ export class MushafPage {
   readonly words = new Map<string, WordRef>();
   /** Basmala line per surah that begins on this page. */
   readonly basmala = new Map<number, { el: HTMLElement; box: Box }>();
+  /**
+   * Ghost line ends: a faded copy of the next line's first word, just past the
+   * end of the line, as a preview while reading it (the "preview the next
+   * line" setting).
+   */
+  readonly ghostOnLine = new Map<HTMLElement, HTMLElement>();
   readonly firstWord: WordRef;
   readonly lastOrder: number;
   private fitted = false;
@@ -218,7 +224,10 @@ export class MushafPage {
   /** Record word geometry. The page must be attached to the document (it may be hidden). */
   measure(): void {
     const scale = this.el.getBoundingClientRect().width / this.el.offsetWidth || 1;
-    if (!this.fitted) this.fitLines(scale);
+    if (!this.fitted) {
+      this.fitLines(scale);
+      this.addGhosts();
+    }
     const origin = this.el.getBoundingClientRect();
     const toBox = (r: DOMRect, line: HTMLElement): Box => {
       const lr = line.getBoundingClientRect();
@@ -234,6 +243,31 @@ export class MushafPage {
       const range = document.createRange();
       range.selectNodeContents(b.el);
       b.box = toBox(range.getBoundingClientRect(), b.el);
+    }
+  }
+
+  /**
+   * Copy each line's first word past the end of the line before it (after
+   * fitLines, so sizes match). Not before a new ayah: the reciter pauses on the
+   * ayah number there, so there is time to find the next line anyway.
+   */
+  private addGhosts(): void {
+    const lines = [...this.el.querySelectorAll<HTMLElement>('.line')];
+    for (let i = 0; i + 1 < lines.length; i++) {
+      const words = lines[i].querySelectorAll<HTMLElement>(':scope > .w');
+      const first = lines[i + 1].querySelector<HTMLElement>(':scope > .w:not(.end)');
+      if (words.length === 0 || !first?.dataset.k || first.dataset.k.endsWith(':1')) continue;
+      const copy = first.cloneNode(true) as HTMLElement;
+      copy.className = first.classList.contains('v4') ? 'v4' : '';
+      copy.removeAttribute('data-k');
+      const ghost = document.createElement('span');
+      ghost.className = 'ghost';
+      ghost.setAttribute('aria-hidden', 'true');
+      ghost.append(copy);
+      // The last word in the DOM is the leftmost (the line's end, in RTL).
+      ghost.style.right = `${lines[i].clientWidth - words[words.length - 1].offsetLeft}px`;
+      lines[i].append(ghost);
+      this.ghostOnLine.set(lines[i], ghost);
     }
   }
 

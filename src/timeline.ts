@@ -90,17 +90,19 @@ export interface KeyframeSources {
   /** Basmala recited before the first ayah (audio from t=0 to `end`). */
   preroll?: { box: Box; end: number };
   mode: TrackingMode;
+  /** Motion smoothing time constant (ms): line changes leave this much sooner so the smoothed dot lands on time. */
+  lead?: number;
 }
 
 // While the reciter breathes between ayat the focus rests on the ayah number,
 // arriving shortly after the ayah ends and leaving shortly before the next starts.
 const MARKER_TRAVEL_MS = 180;
 const MIN_PAUSE_FOR_MARKER_MS = 2 * MARKER_TRAVEL_MS;
-// Moving to the next line sweeps the page a full line-width back, so it is kept
-// short: the focus waits at the end of the line through any pause and leaves
-// this long before the next line's first word starts. When the reciter runs
-// straight on, the sweep eats into that word instead, so the page never jumps
-// a line-width instantly; the focus catches up with the voice within the word.
+// Moving to the next line sweeps the page a full line-width back, which takes
+// this long. It is timed to finish as the next line's first word starts, so
+// the dot is on its first letter then: through a pause the focus waits at the
+// end of the line; when the reciter runs straight on, it leaves before the
+// line's last word ends.
 const LINE_RETURN_MS = 120;
 
 export function buildKeyframes(src: KeyframeSources): Keyframe[] {
@@ -108,10 +110,14 @@ export function buildKeyframes(src: KeyframeSources): Keyframe[] {
   const glide = src.mode === 'glide';
   const startX = (box: Box) => (glide ? box.r : (box.l + box.r) / 2);
   const endX = (box: Box) => (glide ? box.l : (box.l + box.r) / 2);
+  /** Glide across a word; returns the keyframe at its end, which leaving for the next line may move earlier. */
   const span = (box: Box, start: number, end: number) => {
     kfs.push({ t: start, x: startX(box), y: box.cy });
-    kfs.push({ t: end, x: endX(box), y: box.cy });
+    const last = { t: end, x: endX(box), y: box.cy };
+    kfs.push(last);
+    return last;
   };
+  const lead = src.lead ?? 0;
 
   if (src.preroll && src.preroll.end > 0) span(src.preroll.box, 0, src.preroll.end);
 
@@ -136,30 +142,39 @@ export function buildKeyframes(src: KeyframeSources): Keyframe[] {
     if (!(nextStart - lastEnd >= MIN_PAUSE_FOR_MARKER_MS)) continue;
     restsOnMarker.add(verseKey);
     const nextBox = next && src.boxOf(`${next.verse_key}:1`);
-    const leave = nextBox && nextBox.cy !== marker.cy ? LINE_RETURN_MS : MARKER_TRAVEL_MS;
+    const leave = nextBox && nextBox.cy !== marker.cy ? LINE_RETURN_MS + lead : MARKER_TRAVEL_MS;
     const x = (marker.l + marker.r) / 2;
     kfs.push({ t: lastEnd + MARKER_TRAVEL_MS, x, y: marker.cy });
     kfs.push({ t: nextStart - leave, x, y: marker.cy });
   }
 
-  let prev: { box: Box; end: number; verseKey: string } | undefined;
+  let prev: { box: Box; start: number; end: number; verseKey: string; last: Keyframe } | undefined;
   for (const w of src.words) {
     const box = src.boxOf(w.key);
     if (!box) continue;
     const newLine = prev !== undefined && prev.box.cy !== box.cy;
-    if (newLine && w.start - prev!.end < LINE_RETURN_MS) {
-      const arrive = Math.min(prev!.end + LINE_RETURN_MS, w.end);
-      const f = (arrive - w.start) / (w.end - w.start);
-      kfs.push({ t: arrive, x: startX(box) + (endX(box) - startX(box)) * f, y: box.cy });
-      kfs.push({ t: w.end, x: endX(box), y: box.cy });
-    } else {
-      // Through a pause at the end of a line (unless resting on its ayah number), wait there.
-      if (newLine && !restsOnMarker.has(prev!.verseKey)) {
-        kfs.push({ t: w.start - LINE_RETURN_MS, x: endX(prev!.box), y: prev!.box.cy });
+    let last: Keyframe;
+    if (newLine) {
+      let arrive = w.start - lead;
+      if (!restsOnMarker.has(prev!.verseKey)) {
+        const leave = arrive - LINE_RETURN_MS;
+        if (leave >= prev!.end) {
+          kfs.push({ t: leave, x: endX(prev!.box), y: prev!.box.cy });
+        } else {
+          // Running straight on: leave the line's last word before it ends.
+          const t = Math.max(prev!.start, leave);
+          const f = prev!.end > prev!.start ? (t - prev!.start) / (prev!.end - prev!.start) : 1;
+          prev!.last.t = t;
+          prev!.last.x = startX(prev!.box) + (endX(prev!.box) - startX(prev!.box)) * f;
+          arrive = Math.max(arrive, t + LINE_RETURN_MS);
+        }
       }
-      span(box, w.start, w.end);
+      kfs.push({ t: arrive, x: startX(box), y: box.cy });
+      last = span(box, Math.max(w.start, arrive), w.end);
+    } else {
+      last = span(box, w.start, w.end);
     }
-    prev = { box, end: w.end, verseKey: w.key.slice(0, w.key.lastIndexOf(':')) };
+    prev = { box, start: w.start, end: w.end, verseKey: w.key.slice(0, w.key.lastIndexOf(':')), last };
   }
 
   return kfs.sort((a, b) => a.t - b.t);

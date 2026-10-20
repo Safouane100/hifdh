@@ -28,6 +28,8 @@ export interface EngineOptions {
   reciter: number;
   script: Script;
   mode: TrackingMode;
+  /** Motion smoothing time constant (ms), which line changes start early to make up for. */
+  smoothing: number;
   rate: number;
   range: RangeMode;
   /** Passes over the range; 0 repeats forever. */
@@ -267,6 +269,12 @@ export class Engine {
     this.rebuildKeyframes();
   }
 
+  setSmoothing(smoothing: number): void {
+    this.opts.smoothing = smoothing;
+    // A resting dot (no keyframes) stays resting.
+    if (this.keyframes.length > 0) this.rebuildKeyframes();
+  }
+
   setRange(range: RangeMode, repeat: number): void {
     this.opts.range = range;
     this.opts.repeat = repeat;
@@ -477,6 +485,7 @@ export class Engine {
       // Most reciters say the basmala before ayah 1; walk the basmala line meanwhile.
       preroll: basmala && firstStart > 800 ? { box: basmala.box, end: firstStart - 150 } : undefined,
       mode: this.opts.mode,
+      lead: this.opts.smoothing,
     });
   }
 
