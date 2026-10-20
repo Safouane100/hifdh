@@ -59,7 +59,8 @@ const DEFAULTS: Settings = {
   version: 3,
 };
 
-// v2: zoom became "magnify" relative to the whole-page fit.
+// v2: zoom became "magnify" relative to the whole-page fit. The key keeps the
+// app's old "hifz" spelling so settings saved under it survive the rename.
 const STORAGE_KEY = 'hifz-focus:settings:v2';
 
 function loadSettings(): Settings {

@@ -1,4 +1,4 @@
-# Hifz Focus
+# Hifdh Focus
 
 A Quran memorization site built around a fixed gaze. You look at one dot in the middle of the screen and keep your eyes still; the whole mushaf page moves underneath it in sync with the recitation, so the word (and, in glide mode, roughly the letter) being pronounced is always right at the dot. Over repeated passes you see the page's exact layout while hearing correct recitation.
 
