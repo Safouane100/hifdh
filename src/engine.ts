@@ -75,6 +75,11 @@ const verseEndOrder = (verseKey: string) => orderOfKey(`${verseKey}:999`);
 // restarting this one, like a music player's "previous track".
 const AT_START_MS = 1000;
 const SEEK_SLOP_MS = 80;
+// The drawing clock (see Engine.now) takes a difference this large from the
+// audio's own time as a jump, and stops if the audio's time hasn't moved for
+// this long (buffering).
+const CLOCK_JUMP_MS = 500;
+const CLOCK_STALL_MS = 300;
 
 /** Where one pass of playback runs: pages `start`–`end`, and if set, only up to the end of ayah `stopAfter`. */
 interface PassRange {
@@ -108,8 +113,10 @@ export class Engine {
   /** Most recently requested page; may still be loading, unlike `page`. */
   private requestedPage = 1;
   private snapPending = true;
-  private lastCt = -1;
-  private lastPerf = 0;
+  /** The drawing clock (see `now`): its last value and when, and the last currentTime reading and when it changed. */
+  private clock = { t: 0, perf: 0, ct: -1, ctPerf: 0 };
+  /** How far the clock is behind the latest currentTime reading (ms; negative when ahead), still to be made up. */
+  private drift = 0;
 
   constructor(
     private readonly stage: HTMLElement,
@@ -615,16 +622,40 @@ export class Engine {
     } else this.events.state('error', message);
   }
 
-  /** Audio clock in ms, extrapolated between the element's coarse currentTime updates. */
+  /**
+   * Audio clock in ms for drawing. currentTime updates irregularly (Chrome can
+   * repeat a value for a few hundred ms, then report one behind where it should
+   * be), and running back even 50 ms visibly rewinds a 120 ms line change. So
+   * this clock runs at the playback rate and makes up any difference with the
+   * readings by going at most half as fast or half again as fast, never
+   * backwards. Seeks and other large jumps are taken at once.
+   */
   private now(): number {
     const ct = this.audio.currentTime * 1000;
     const perf = performance.now();
-    if (ct !== this.lastCt) {
-      this.lastCt = ct;
-      this.lastPerf = perf;
+    if (this.audio.paused || this.audio.seeking) {
+      this.clock = { t: ct, perf, ct, ctPerf: perf };
+      this.drift = 0;
       return ct;
     }
-    if (this.audio.paused || this.audio.seeking) return ct;
-    return ct + Math.min(perf - this.lastPerf, 300) * this.audio.playbackRate;
+    const stalled = perf - this.clock.ctPerf > CLOCK_STALL_MS;
+    const step = stalled ? 0 : Math.min(perf - this.clock.perf, 250) * this.audio.playbackRate;
+    let t = this.clock.t + step;
+    if (ct !== this.clock.ct) {
+      this.clock.ct = ct;
+      this.clock.ctPerf = perf;
+      this.drift = ct - t;
+    }
+    if (Math.abs(this.drift) > CLOCK_JUMP_MS) {
+      t = ct;
+      this.drift = 0;
+    } else {
+      const catchUp = Math.max(-step / 2, Math.min(step / 2, this.drift));
+      t += catchUp;
+      this.drift -= catchUp;
+    }
+    this.clock.t = t;
+    this.clock.perf = perf;
+    return t;
   }
 }
