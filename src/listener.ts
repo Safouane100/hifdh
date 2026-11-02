@@ -1,3 +1,5 @@
+import { joinResults } from './recite';
+
 // Thin wrapper over the browser's Web Speech API in Arabic. Chrome and Edge
 // send the audio to their speech service; Safari uses Apple's. Firefox has no
 // implementation. Recognition sessions end on their own after silence or about
@@ -142,13 +144,12 @@ export class Listener {
       if (rec !== this.rec) return;
       heardAnything = true;
       this.quickEnds = 0;
-      let final = '';
-      let interim = '';
+      const results = [];
       for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i];
-        if (r.isFinal) final += ` ${r[0].transcript}`;
-        else interim += ` ${r[0].transcript}`;
+        results.push({ transcript: r[0].transcript, isFinal: r.isFinal });
       }
+      const { final, interim } = joinResults(results);
       this.events.transcript(final, interim);
     };
     rec.onerror = (e) => {

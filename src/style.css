@@ -599,9 +599,6 @@ button.reveal {
   font-size: 12.5px;
   white-space: nowrap;
 }
-.loop-point .clear {
-  color: var(--muted);
-}
 select:disabled {
   opacity: 0.45;
 }

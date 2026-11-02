@@ -34,7 +34,6 @@ interface Settings {
   /** Your own tajweed colours by rule id (e.g. "munfasil"), overriding the defaults. */
   colors: Partial<Record<Rule, string>>;
   range: RangeMode;
-  repeat: number;
   /** Settings format; see loadSettings. */
   version: number;
 }
@@ -58,7 +57,6 @@ const DEFAULTS: Settings = {
   peek: false,
   colors: {},
   range: 'surah',
-  repeat: 3,
   version: 3,
 };
 
@@ -72,6 +70,8 @@ function loadSettings(): Settings {
     // Before version 3 the default range was "this page"; a stored value from
     // then is just that old default, so move it to the new one.
     if ((stored.version ?? 0) < 3) delete stored.range;
+    // Repeat was a setting until playback always repeated.
+    delete stored.repeat;
     return { ...DEFAULTS, ...stored, version: 3 };
   } catch {
     return { ...DEFAULTS };
@@ -99,7 +99,6 @@ const ui = {
   nextAyah: $<HTMLButtonElement>('next-ayah'),
   reveal: $<HTMLButtonElement>('reveal'),
   range: $<HTMLSelectElement>('range'),
-  repeat: $<HTMLSelectElement>('repeat'),
   pass: $<HTMLSpanElement>('pass'),
   rate: $<HTMLSelectElement>('rate'),
   zoom: $<HTMLInputElement>('zoom'),
@@ -432,7 +431,6 @@ function onState(state: PlayState, detail?: string): void {
     loading: detail ?? 'Loading…',
     playing: '',
     paused: detail ?? 'Paused',
-    finished: 'Session complete',
     error: detail ?? 'Something went wrong',
   };
   // While reciting, the status line belongs to the practice session.
@@ -488,8 +486,8 @@ function beep(): void {
   osc.stop(audioCtx.currentTime + 0.26);
 }
 
-function onPass(done: number, total: number): void {
-  ui.pass.textContent = total === 1 ? '' : `Pass ${done} / ${total === 0 ? '∞' : total}`;
+function onPass(pass: number): void {
+  ui.pass.textContent = pass > 1 ? `Pass ${pass}` : '';
 }
 
 // --- A-B loop -------------------------------------------------------------
@@ -585,14 +583,11 @@ function bindControls(): void {
     save();
     void engine.reconfigure({ reciter: settings.reciter });
   });
-  const updateRange = () => {
+  ui.range.addEventListener('change', () => {
     settings.range = ui.range.value as RangeMode;
-    settings.repeat = Number(ui.repeat.value);
     save();
-    engine.setRange(settings.range, settings.repeat);
-  };
-  ui.range.addEventListener('change', updateRange);
-  ui.repeat.addEventListener('change', updateRange);
+    engine.setRange(settings.range);
+  });
   ui.rate.addEventListener('change', () => setSpeed(Number(ui.rate.value)));
   ui.zoom.addEventListener('input', () => {
     settings.magnify = Number(ui.zoom.value);
@@ -703,8 +698,11 @@ function bindControls(): void {
 
   for (const pointEl of ui.loopPoints) {
     const which = pointEl.dataset.point as 'a' | 'b';
-    pointEl.querySelector('.set')!.addEventListener('click', () => engine.markPoint(which));
-    pointEl.querySelector('.clear')!.addEventListener('click', () => engine.setPoint(which, undefined));
+    // Pressing a set point again removes it.
+    pointEl.querySelector('.set')!.addEventListener('click', () => {
+      if (pointEl.classList.contains('is-set')) engine.setPoint(which, undefined);
+      else engine.markPoint(which);
+    });
     for (const nudge of pointEl.querySelectorAll<HTMLButtonElement>('.nudge')) {
       nudge.addEventListener('click', () => void engine.nudgePoint(which, Number(nudge.dataset.dir) as 1 | -1));
     }
@@ -806,7 +804,6 @@ function bindControls(): void {
 
 function syncInputs(): void {
   ui.range.value = settings.range;
-  ui.repeat.value = String(settings.repeat);
   ui.rate.value = String(settings.rate);
   ui.zoom.value = String(settings.magnify);
   ui.mode.value = settings.mode;
@@ -873,7 +870,6 @@ async function main(): Promise<void> {
         smoothing: settings.smoothing,
         rate: settings.rate,
         range: settings.range,
-        repeat: settings.repeat,
       },
       { page: onPage, state: onState, pass: onPass, loop: onLoop },
     );

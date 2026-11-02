@@ -175,3 +175,34 @@ export function stripOpenings(heard: string[]): string[] {
   }
   return heard.slice(start);
 }
+
+/** True when `words` starts with all of `earlier`, allowing the recogniser to have revised a few of them. */
+function restates(words: string[], earlier: string[]): boolean {
+  if (earlier.length === 0 || words.length < earlier.length) return false;
+  let changed = 0;
+  for (let k = 0; k < earlier.length; k++) if (normalize(words[k]) !== normalize(earlier[k])) changed++;
+  return changed <= Math.floor(earlier.length / 4);
+}
+
+/**
+ * One session's transcript from its recognition results, as settled ("final")
+ * and still being revised ("interim") text. Desktop browsers give each result
+ * only its own stretch of speech, but Chrome on Android repeats everything said
+ * earlier in the session at the start of each new result; appending those
+ * would hear the start of the recitation over and over. A result that restates
+ * the text before it replaces that text instead.
+ */
+export function joinResults(results: { transcript: string; isFinal: boolean }[]): { final: string; interim: string } {
+  let final: string[] = [];
+  let interim: string[] = [];
+  for (const result of results) {
+    let words = result.transcript.trim().split(/\s+/).filter(Boolean);
+    if (result.isFinal) {
+      final = restates(words, final) ? words : [...final, ...words];
+    } else {
+      if (restates(words, final)) words = words.slice(final.length);
+      interim = restates(words, interim) ? words : [...interim, ...words];
+    }
+  }
+  return { final: final.join(' '), interim: interim.join(' ') };
+}

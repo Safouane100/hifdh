@@ -19,9 +19,9 @@ import {
   sample,
 } from './timeline';
 
-export type PlayState = 'idle' | 'loading' | 'playing' | 'paused' | 'finished' | 'error';
+export type PlayState = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
 
-/** How far playback runs from the page it was started on before stopping or repeating. */
+/** How far one pass runs from where play was pressed before going back to the range's start. */
 export type RangeMode = 'page' | 'pages2' | 'pages5' | 'surah' | 'continuous';
 
 export interface EngineOptions {
@@ -32,8 +32,6 @@ export interface EngineOptions {
   smoothing: number;
   rate: number;
   range: RangeMode;
-  /** Passes over the range; 0 repeats forever. */
-  repeat: number;
 }
 
 /** An ayah, with the page it starts on. */
@@ -51,7 +49,8 @@ export interface Loop {
 export interface EngineEvents {
   page(page: MushafPage): void;
   state(state: PlayState, detail?: string): void;
-  pass(done: number, total: number): void;
+  /** A pass over the range (1 for the first) has started. */
+  pass(pass: number): void;
   loop(loop: Loop): void;
 }
 
@@ -101,11 +100,11 @@ export class Engine {
   private keyframes: Keyframe[] = [];
   private restingKey?: string;
   private range: PassRange = { start: 1, end: 1 };
-  private sessionStart: { page: number; wordKey?: string } = { page: 1 };
-  private passesDone = 0;
+  /** Where play was pressed: the range is measured from here. */
+  private origin: { page: number; wordKey?: string } = { page: 1 };
+  private pass = 1;
   private token = 0;
   private advancing = false;
-  private finished = false;
   private lastActiveKey?: string;
   private loop: Loop = {};
   /** Ayah an arrow-key jump is heading to, so repeated presses keep counting from it. */
@@ -128,7 +127,7 @@ export class Engine {
     this.audio.addEventListener('ended', () => void this.onChapterEnded());
     this.audio.addEventListener('play', () => this.events.state('playing'));
     this.audio.addEventListener('pause', () => {
-      if (!this.audio.ended && !this.advancing && !this.finished) this.events.state('paused');
+      if (!this.audio.ended && !this.advancing) this.events.state('paused');
     });
     this.audio.addEventListener('waiting', () => this.events.state('loading', 'Buffering audio…'));
     this.audio.addEventListener('playing', () => this.events.state('playing'));
@@ -156,13 +155,10 @@ export class Engine {
 
   /** Start a fresh session on `pageNumber` (optionally from a specific word). */
   async start(pageNumber: number, wordKey?: string): Promise<void> {
-    this.passesDone = 0;
-    // Repeats go back to where the session began (or to A when looping), not
-    // the top of the page.
-    const a = this.activeLoop()?.a;
-    this.sessionStart = a ? { page: a.page, wordKey: `${a.verseKey}:1` } : { page: pageNumber, wordKey };
-    this.range = this.computeRange(pageNumber, wordKey);
-    this.events.pass(1, this.opts.repeat);
+    this.origin = { page: pageNumber, wordKey };
+    this.range = this.computeRange();
+    this.pass = 1;
+    this.events.pass(this.pass);
     await this.playFrom(pageNumber, wordKey);
   }
 
@@ -231,13 +227,11 @@ export class Engine {
     this.loop[which] = point;
     const { a, b } = this.loop;
     if (a && b && verseEndOrder(b.verseKey) < verseEndOrder(a.verseKey)) this.loop = { a: b, b: a };
-    const active = this.activeLoop();
-    if (active) {
-      this.sessionStart = { page: active.a.page, wordKey: `${active.a.verseKey}:1` };
-      this.passesDone = 0;
-      this.events.pass(1, this.opts.repeat);
+    if (this.activeLoop()) {
+      this.pass = 1;
+      this.events.pass(this.pass);
     }
-    this.range = this.computeRange(this.sessionStart.page, this.sessionStart.wordKey);
+    this.range = this.computeRange();
     this.events.loop({ ...this.loop });
   }
 
@@ -284,11 +278,9 @@ export class Engine {
     if (this.keyframes.length > 0) this.rebuildKeyframes();
   }
 
-  setRange(range: RangeMode, repeat: number): void {
+  setRange(range: RangeMode): void {
     this.opts.range = range;
-    this.opts.repeat = repeat;
-    if (this.page) this.range = this.computeRange(this.sessionStart.page, this.sessionStart.wordKey);
-    this.events.pass(Math.min(this.passesDone + 1, repeat || Infinity), repeat);
+    this.range = this.computeRange();
   }
 
   /** Reciter or script change: reload what's needed and continue where we were. */
@@ -349,32 +341,48 @@ export class Engine {
 
   // ----------------------------------------------------------------------------
 
-  private computeRange(startPage: number, wordKey?: string): PassRange {
+  /** Surah being started from a page: the given word's, else the page's first word's (the first surah covering it). */
+  private chapterAt(page: number, wordKey?: string): Chapter | undefined {
+    return wordKey
+      ? this.chapters[Number(wordKey.split(':')[0]) - 1]
+      : this.chapters.find((c) => c.pages[0] <= page && page <= c.pages[1]);
+  }
+
+  private computeRange(): PassRange {
     // An A-B loop decides where a pass ends; pages may turn freely until then.
     const loop = this.activeLoop();
     if (loop) return { start: loop.a.page, end: PAGE_COUNT, stopAfter: loop.b.verseKey };
-    // "To end of surah" means the surah being started: the given word's, else the
-    // page's first word's (the first surah covering the page). It ends after the
-    // surah's last ayah, not its last page, which the next surah often shares.
-    const chapter = wordKey
-      ? this.chapters[Number(wordKey.split(':')[0]) - 1]
-      : this.chapters.find((c) => c.pages[0] <= startPage && startPage <= c.pages[1]);
+    const { page, wordKey } = this.origin;
+    // "The surah" ends after the surah's last ayah, not its last page, which the
+    // next surah often shares.
+    const chapter = this.chapterAt(page, wordKey);
     if (this.opts.range === 'surah' && chapter) {
-      return { start: startPage, end: PAGE_COUNT, stopAfter: `${chapter.id}:${chapter.verses_count}` };
+      return { start: page, end: PAGE_COUNT, stopAfter: `${chapter.id}:${chapter.verses_count}` };
     }
     const end = {
-      page: startPage,
-      pages2: startPage + 1,
-      pages5: startPage + 4,
-      surah: startPage,
+      page,
+      pages2: page + 1,
+      pages5: page + 4,
+      surah: page,
       continuous: PAGE_COUNT,
     }[this.opts.range];
-    return { start: startPage, end: Math.min(end, PAGE_COUNT) };
+    return { start: page, end: Math.min(end, PAGE_COUNT) };
+  }
+
+  /** Where every pass after the first begins: A when looping, else the start of the range the Play setting covers. */
+  private passStart(): { page: number; wordKey?: string } {
+    const a = this.activeLoop()?.a;
+    if (a) return { page: a.page, wordKey: `${a.verseKey}:1` };
+    const { page, wordKey } = this.origin;
+    const chapter = this.chapterAt(page, wordKey);
+    // The surah's basmala and ayah 1, which often start part-way down its first page.
+    if (this.opts.range === 'surah' && chapter) return { page: chapter.pages[0], wordKey: `${chapter.id}:1:1` };
+    // The top of the page play was pressed on.
+    return { page };
   }
 
   private async playFrom(pageNumber: number, wordKey?: string): Promise<void> {
     const token = ++this.token;
-    this.finished = false;
     this.events.state('loading', 'Loading recitation…');
     try {
       const page = await this.show(pageNumber);
@@ -599,19 +607,12 @@ export class Engine {
     }
   }
 
+  /** The pass reached its end: go round again from the range's start until paused. */
   private async finishPass(): Promise<void> {
-    this.passesDone++;
-    const total = this.opts.repeat;
-    if (total === 0 || this.passesDone < total) {
-      this.events.pass(this.passesDone + 1, total);
-      await this.playFrom(this.sessionStart.page, this.sessionStart.wordKey);
-      return;
-    }
-    this.finished = true;
-    this.audio.pause();
-    this.passesDone = 0;
-    this.keyframes = [];
-    this.events.state('finished');
+    this.pass++;
+    this.events.pass(this.pass);
+    const { page, wordKey } = this.passStart();
+    await this.playFrom(page, wordKey);
   }
 
   private fail(err: unknown): void {

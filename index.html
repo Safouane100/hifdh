@@ -85,35 +85,22 @@
           <option value="continuous">continuously</option>
         </select>
       </label>
-      <label class="field">
-        <span>Repeat</span>
-        <select id="repeat">
-          <option value="1">once</option>
-          <option value="3">3×</option>
-          <option value="5">5×</option>
-          <option value="10">10×</option>
-          <option value="20">20×</option>
-          <option value="0">∞</option>
-        </select>
-      </label>
       <span id="pass" class="pass"></span>
       <div class="loop" role="group" aria-label="A-B loop">
         <div class="loop-point" data-point="a">
-          <button class="set" title="Loop start: set at the current ayah (A). Again on the same ayah removes it.">A</button>
+          <button class="set" title="Loop start: set at the current ayah (A). Press again to remove it.">A</button>
           <span class="edit">
             <button class="nudge" data-dir="-1" title="Move A one ayah earlier">‹</button>
             <span class="at"></span>
             <button class="nudge" data-dir="1" title="Move A one ayah later">›</button>
-            <button class="clear" title="Remove A">×</button>
           </span>
         </div>
         <div class="loop-point" data-point="b">
-          <button class="set" title="Loop end: set at the current ayah (B). Again on the same ayah removes it.">B</button>
+          <button class="set" title="Loop end: set at the current ayah (B). Press again to remove it.">B</button>
           <span class="edit">
             <button class="nudge" data-dir="-1" title="Move B one ayah earlier">‹</button>
             <span class="at"></span>
             <button class="nudge" data-dir="1" title="Move B one ayah later">›</button>
-            <button class="clear" title="Remove B">×</button>
           </span>
         </div>
       </div>
