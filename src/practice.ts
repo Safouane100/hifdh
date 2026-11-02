@@ -169,10 +169,13 @@ export class Practice {
     await this.follow();
   }
 
-  /** Reveal the next word in its place on the page, for someone who is stuck. */
+  /** Reveal the next hidden word in its place on the page, for someone who is stuck; each further hint reveals the word after. */
   hint(): void {
-    if (!this.active || !this.expected[this.shown]) return;
-    this.hinted.add(this.shown);
+    if (!this.active) return;
+    let next = this.shown;
+    while (this.hinted.has(next)) next++;
+    if (!this.expected[next]) return;
+    this.hinted.add(next);
     this.paint();
   }
 
