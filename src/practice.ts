@@ -3,6 +3,10 @@ import type { Engine, VersePoint } from './engine';
 import { Listener } from './listener';
 import { type MushafPage, buildPage } from './mushaf';
 import { type WordStatus, align, normalize, stripOpenings, tokenize } from './recite';
+import { type CheckerEvent, type Passage, TilawaListener, type WordRef } from './tilawa';
+
+/** Which speech recogniser follows the recitation: the browser's speech service, or Tilawa on the device. */
+export type Recogniser = 'browser' | 'tilawa';
 
 interface Expected {
   key: string;
@@ -14,8 +18,8 @@ interface Expected {
 export interface PracticeEvents {
   /** Status line text; `listening` says whether the microphone is live. */
   status(message: string, listening: boolean): void;
-  /** Words just judged as skipped or said differently. */
-  mistake(kind: 'missed' | 'wrong', words: string[]): void;
+  /** Words just judged as skipped or said differently, or a word said that isn't there ("added", at the word given). */
+  mistake(kind: 'missed' | 'wrong' | 'added', words: string[]): void;
   /** Practice ended on its own because listening became impossible. */
   stopped(reason: string): void;
 }
@@ -28,19 +32,26 @@ const orderOfKey = (key: string) => {
   return wordOrder(c, v, p);
 };
 
+/** An Arabic letter: what separates a word from a pause mark like ۖ, which quran.com writes after a space. */
+const ARABIC_LETTER = /[\u0621-\u064A\u0671-\u06D3]/;
+
 /**
  * Recitation practice: the reciter recites from memory, the page follows their
  * voice, words not yet recited stay hidden, and skipped or different words are
  * revealed and reported.
  *
- * Statuses come in two layers. What the recogniser has settled on ("final")
- * is committed and never changes; what it is still revising ("interim") only
- * reveals words tentatively, so a mistake is only reported once it is certain
- * the recogniser heard it.
+ * Statuses come in two layers. With the browser's recogniser, what it has
+ * settled on ("final") is committed and never changes; what it is still
+ * revising ("interim") only reveals words tentatively, so a mistake is only
+ * reported once it is certain the recogniser heard it. Tilawa reports where the
+ * reciter is and judges mistakes itself, so its verdicts are committed directly.
  */
 export class Practice {
   active = false;
   private readonly listener: Listener;
+  private readonly tilawa: TilawaListener;
+  /** The recogniser this session started with; changing the setting applies from the next one. */
+  private usesTilawa = false;
   private expected: Expected[] = [];
   private indexOf = new Map<string, number>();
   /** Where this session began, so "again" starts over from there. */
@@ -62,11 +73,26 @@ export class Practice {
   private finished = false;
   /** The recogniser reported silence and nothing has been heard since. */
   private silent = false;
+  /**
+   * Tilawa numbers an ayah's words in Tanzil's text, which splits three words
+   * quran.com keeps whole (e.g. إِلْ يَاسِينَ in 37:130), so its word keys
+   * (`surah:ayah:n`) map to `expected` here, and `tanzilCount` is how many it
+   * has numbered so far in each ayah.
+   */
+  private tanzilIndex = new Map<string, number>();
+  private tanzilCount = new Map<string, number>();
+  /** Where each stretch Tilawa followed began, so a skipped passage ends where the reciter picked up again. */
+  private resumed = new Set<number>();
+  /** The surah's ayat Tilawa is listening for now. */
+  private passage?: Passage;
+  /** Words said that aren't in the text (Tilawa only). */
+  private extra = 0;
 
   constructor(
     private readonly engine: Engine,
     private readonly chapters: Chapter[],
     private readonly events: PracticeEvents,
+    private readonly recogniser: () => Recogniser,
   ) {
     this.listener = new Listener({
       session: () => {
@@ -94,10 +120,24 @@ export class Practice {
         this.events.stopped(message);
       },
     });
+    this.tilawa = new TilawaListener({
+      status: (message) => this.active && this.events.status(message, true),
+      listening: () => {
+        if (!this.active || !this.passage) return;
+        const { surah, fromAyah } = this.passage;
+        this.events.status(`Listening — recite from ${this.label(`${surah}:${fromAyah}`)}`, true);
+      },
+      position: (word, from) => this.onPosition(word, from),
+      checker: (event) => this.onChecker(event),
+      fatal: (message) => {
+        this.stop();
+        this.events.stopped(message);
+      },
+    });
   }
 
   get listening(): boolean {
-    return this.listener.listening;
+    return this.usesTilawa ? this.tilawa.listening : this.listener.listening;
   }
 
   /** The stretch has been recited to its end (the summary is showing). */
@@ -122,7 +162,11 @@ export class Practice {
     this.until = until;
     this.endOrder = until ? orderOfKey(`${until}:999`) : Infinity;
     this.engine.audio.pause();
-    this.listener.start();
+    this.usesTilawa = this.recogniser() === 'tilawa';
+    if (this.usesTilawa) {
+      this.passage = this.passageFrom(from.verseKey);
+      this.tilawa.begin(this.passage);
+    } else this.listener.start();
     this.events.status('Starting the microphone…', true);
     this.nextPage = from.page;
     await this.appendNextPage(orderOfKey(`${from.verseKey}:1`));
@@ -142,11 +186,13 @@ export class Practice {
   /** Pause or resume listening without losing progress. */
   toggleListening(): void {
     if (!this.active || this.finished) return;
-    if (this.listener.listening) {
-      this.listener.stop();
+    if (this.listening) {
+      if (this.usesTilawa) this.tilawa.pause();
+      else this.listener.stop();
       this.events.status('Paused — press Space to keep reciting', false);
     } else {
-      this.listener.start();
+      if (this.usesTilawa) this.tilawa.resume();
+      else this.listener.start();
       this.events.status('Listening', true);
     }
   }
@@ -160,11 +206,16 @@ export class Practice {
       return;
     }
     for (const map of [this.committed, this.tentative]) for (const i of [...map.keys()]) if (i >= at) map.delete(i);
-    for (const i of [...this.hinted]) if (i >= at) this.hinted.delete(i);
+    for (const set of [this.hinted, this.resumed]) for (const i of [...set]) if (i >= at) set.delete(i);
     this.cursor = this.shown = this.base = at;
     this.finished = false;
-    this.listener.restart();
-    if (!this.listener.listening) this.listener.start();
+    if (this.usesTilawa) {
+      this.passage = this.passageFrom(point.verseKey);
+      this.tilawa.begin(this.passage);
+    } else {
+      this.listener.restart();
+      if (!this.listener.listening) this.listener.start();
+    }
     this.events.status(`Listening — recite from ${this.label(this.expected[at].key)}`, true);
     await this.follow();
   }
@@ -200,14 +251,20 @@ export class Practice {
 
   private reset(): void {
     this.listener.stop();
+    this.tilawa.stop();
     this.active = false;
     this.finished = false;
     this.silent = false;
     this.expected = [];
     this.indexOf.clear();
+    this.tanzilIndex.clear();
+    this.tanzilCount.clear();
+    this.resumed.clear();
     this.committed.clear();
     this.tentative.clear();
     this.hinted.clear();
+    this.extra = 0;
+    this.passage = undefined;
     this.cursor = this.shown = this.base = 0;
     this.nextPage = 0;
     this.loading = undefined;
@@ -225,6 +282,13 @@ export class Practice {
     return `${this.chapters[c - 1].name_simple} ${v}`;
   }
 
+  /** From the start of ayah `verseKey` to the end of its surah, or the loop end if that comes first. */
+  private passageFrom(verseKey: string): Passage {
+    const [surah, fromAyah] = verseKey.split(':').map(Number);
+    const [untilSurah, untilAyah] = this.until?.split(':').map(Number) ?? [];
+    return { surah, fromAyah, toAyah: untilSurah === surah ? untilAyah : this.chapters[surah - 1].verses_count };
+  }
+
   /** Append the words of `nextPage` (from `fromOrder` on, up to the loop end). */
   private async appendNextPage(fromOrder = 0): Promise<void> {
     const pageNumber = this.nextPage;
@@ -235,8 +299,14 @@ export class Practice {
       .filter((r) => r.kind === 'word' && r.order >= fromOrder && r.order <= this.endOrder)
       .sort((a, b) => a.order - b.order);
     for (const ref of refs) {
-      this.indexOf.set(ref.key, this.expected.length);
+      const index = this.expected.length;
+      this.indexOf.set(ref.key, index);
       this.expected.push({ key: ref.key, page: pageNumber, plain: normalize(ref.plain), uthmani: ref.uthmani });
+      const verseKey = ref.key.slice(0, ref.key.lastIndexOf(':'));
+      let n = this.tanzilCount.get(verseKey) ?? 0;
+      const parts = ref.uthmani.split(/\s+/).filter((t) => ARABIC_LETTER.test(t)).length || 1;
+      for (let k = 0; k < parts; k++) this.tanzilIndex.set(`${verseKey}:${++n}`, index);
+      this.tanzilCount.set(verseKey, n);
     }
     const reachedEnd = page.lastOrder >= this.endOrder || pageNumber >= PAGE_COUNT;
     this.nextPage = reachedEnd ? 0 : pageNumber + 1;
@@ -273,6 +343,64 @@ export class Practice {
     void this.follow();
   }
 
+  /** Tilawa is sure the reciter just said `word`, following on from `from`: reveal up to it and follow. */
+  private onPosition(word: WordRef, from: WordRef): void {
+    const passage = this.passage;
+    if (!this.active || this.finished || !passage) return;
+    // The tracker can lock onto any ayah it hears, even outside the passage
+    // (the reciter running on, or repeating an earlier surah); only the passage counts here.
+    if (word.surah !== passage.surah || word.ayah < passage.fromAyah || word.ayah > passage.toAyah) return;
+    const i = this.tanzilIndex.get(`${word.surah}:${word.ayah}:${word.word}`);
+    if (i === undefined || i < this.base) return;
+    const start = this.tanzilIndex.get(`${from.surah}:${from.ayah}:${from.word}`);
+    if (start !== undefined && start >= this.base) this.resumed.add(start);
+    this.cursor = this.shown = Math.max(this.cursor, i + 1);
+    // The surah's last word, with more to recite after it: a session covers one
+    // surah, so listening carries on in a new one for the next.
+    const next = this.expected[i + 1];
+    const nextSurah = next ? Number(next.key.split(':')[0]) : 0;
+    if (nextSurah && nextSurah !== passage.surah) {
+      this.passage = this.passageFrom(`${nextSurah}:1`);
+      this.tilawa.next(this.passage);
+    }
+    void this.follow();
+  }
+
+  /** Tilawa's verdict on a possible mistake; only confirmed ones count, as it advises. */
+  private onChecker(e: CheckerEvent): void {
+    if (!this.active || e.state !== 'confirmed') return;
+    const at = this.tanzilIndex.get(`${e.location.surah}:${e.location.ayah}:${e.location.word}`);
+    if (at === undefined) return;
+    switch (e.errorClass) {
+      case 'wrong_word':
+        this.judge([at], 'wrong');
+        break;
+      case 'omitted_word':
+        this.judge([at], 'missed');
+        break;
+      case 'skipped_passage': {
+        // From the first skipped word up to where the reciter picked up again.
+        const picked = Math.min(...[...this.resumed].filter((i) => i > at), this.cursor);
+        const skipped = [at];
+        for (let i = at + 1; i < picked; i++) skipped.push(i);
+        this.judge(skipped, 'missed');
+        break;
+      }
+      case 'added_word':
+        this.extra++;
+        this.events.mistake('added', [this.expected[at].uthmani]);
+        break;
+    }
+  }
+
+  private judge(indices: number[], status: 'missed' | 'wrong'): void {
+    const fresh = indices.filter((i) => !this.committed.has(i));
+    if (fresh.length === 0) return;
+    for (const i of fresh) this.committed.set(i, status);
+    this.events.mistake(status, fresh.map((i) => this.expected[i].uthmani));
+    this.paint();
+  }
+
   /** Repaint, move the dot to the next word to recite, load ahead, and detect the end. */
   private async follow(): Promise<void> {
     if (this.nextPage && !this.loading && this.expected.length - this.shown < LOOKAHEAD_WORDS) {
@@ -297,14 +425,24 @@ export class Practice {
 
   private finish(): void {
     this.finished = true;
-    this.listener.stop();
+    if (this.usesTilawa) {
+      // Tilawa decides the last mistakes only once the take ends.
+      void this.tilawa.finish().then(() => this.active && this.finished && this.summarise());
+    } else {
+      this.listener.stop();
+      this.summarise();
+    }
+  }
+
+  private summarise(): void {
     const counts = { missed: 0, wrong: 0 };
     for (const status of this.committed.values()) if (status !== 'ok') counts[status]++;
-    const mistakes = counts.missed + counts.wrong;
+    const mistakes = counts.missed + counts.wrong + this.extra;
+    const extra = this.extra ? `, ${this.extra} extra` : '';
     const parts = [
       mistakes === 0
         ? 'no mistakes heard'
-        : `${mistakes} possible mistake${mistakes === 1 ? '' : 's'} (${counts.missed} skipped, ${counts.wrong} different)`,
+        : `${mistakes} possible mistake${mistakes === 1 ? '' : 's'} (${counts.missed} skipped, ${counts.wrong} different${extra})`,
     ];
     if (this.hinted.size) parts.push(`${this.hinted.size} hint${this.hinted.size === 1 ? '' : 's'}`);
     const start = this.from ? ` from ${this.label(`${this.from.verseKey}:1`)}` : '';

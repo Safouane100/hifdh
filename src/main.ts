@@ -3,8 +3,9 @@ import { Engine, type Loop, type PlayState, type RangeMode } from './engine';
 import { type Script, type Theme, setTajweedColours, v4Build } from './fonts';
 import { type Rule, ruleColour } from './tajweed';
 import type { MushafPage, WordRef } from './mushaf';
-import { Practice } from './practice';
+import { Practice, type Recogniser } from './practice';
 import { SPEECH_SUPPORTED, SPEECH_UNSUPPORTED_REASON } from './listener';
+import { TILAWA_SUPPORTED } from './tilawa';
 import { bindGestures } from './touch';
 import type { Point, TrackingMode } from './timeline';
 
@@ -31,6 +32,8 @@ interface Settings {
   beep: boolean;
   /** While reciting, show upcoming words faintly instead of hiding them. */
   peek: boolean;
+  /** What follows a recitation: the browser's speech service, or Tilawa's model on the device. */
+  recogniser: Recogniser;
   /** Your own tajweed colours by rule id (e.g. "munfasil"), overriding the defaults. */
   colors: Partial<Record<Rule, string>>;
   range: RangeMode;
@@ -55,6 +58,7 @@ const DEFAULTS: Settings = {
   autohide: true,
   beep: true,
   peek: false,
+  recogniser: 'browser',
   colors: {},
   range: 'surah',
   version: 3,
@@ -124,6 +128,7 @@ const ui = {
   autohide: $<HTMLInputElement>('autohide'),
   beep: $<HTMLInputElement>('beep'),
   peek: $<HTMLInputElement>('peek'),
+  recogniser: $<HTMLSelectElement>('recogniser'),
   practice: $<HTMLButtonElement>('practice'),
   wordMenu: $<HTMLDivElement>('word-menu'),
 };
@@ -582,9 +587,25 @@ function stopPractice(): void {
   setStatus('');
 }
 
-function onMistake(kind: 'missed' | 'wrong', words: string[]): void {
-  flash(`${kind === 'missed' ? 'Skipped' : 'Check'}: ${words.join(' ')}`, 1800);
+function onMistake(kind: 'missed' | 'wrong' | 'added', words: string[]): void {
+  const label = { missed: 'Skipped', wrong: 'Check', added: 'Extra word near' }[kind];
+  flash(`${label}: ${words.join(' ')}`, 1800);
   if (settings.beep) beep();
+}
+
+/** Why reciting can't start with the chosen recogniser, if it can't. */
+function reciteBlocker(): string | undefined {
+  if (settings.recogniser === 'tilawa') {
+    return TILAWA_SUPPORTED ? undefined : 'This browser can’t run the on-device speech model (it needs WebAssembly and audio worklets).';
+  }
+  return SPEECH_SUPPORTED ? undefined : `${SPEECH_UNSUPPORTED_REASON} Or choose the on-device recogniser in Settings.`;
+}
+
+const reciteTitle = ui.practice.title;
+function syncReciteButton(): void {
+  const blocker = reciteBlocker();
+  ui.practice.disabled = blocker !== undefined;
+  ui.practice.title = blocker ?? reciteTitle;
 }
 
 let audioCtx: AudioContext | undefined;
@@ -752,6 +773,11 @@ function bindControls(): void {
   bindCheck(ui.autohide, 'autohide');
   bindCheck(ui.beep, 'beep');
   bindCheck(ui.peek, 'peek');
+  ui.recogniser.addEventListener('change', () => {
+    settings.recogniser = ui.recogniser.value as Recogniser;
+    save();
+    syncReciteButton();
+  });
   ui.practice.addEventListener('click', () => (practice.active ? stopPractice() : startPractice()));
 
   const togglePanel = (panel: HTMLElement, other: HTMLElement) => {
@@ -911,8 +937,11 @@ function bindControls(): void {
         // recites the same stretch again from its beginning.
         if (practice.done) void practice.again();
         else if (practice.active) stopPractice();
-        else if (SPEECH_SUPPORTED) startPractice();
-        else setStatus(SPEECH_UNSUPPORTED_REASON, true);
+        else {
+          const blocker = reciteBlocker();
+          if (blocker) setStatus(blocker, true);
+          else startPractice();
+        }
         break;
       case 'h':
       case 'H':
@@ -941,6 +970,7 @@ function syncInputs(): void {
   ui.autohide.checked = settings.autohide;
   ui.beep.checked = settings.beep;
   ui.peek.checked = settings.peek;
+  ui.recogniser.value = settings.recogniser;
 }
 
 // --- Screen wake lock -------------------------------------------------------
@@ -996,18 +1026,20 @@ async function main(): Promise<void> {
       },
       { page: onPage, state: onState, pass: onPass, loop: onLoop },
     );
-    practice = new Practice(engine, chapters, {
-      status: (message) => setStatus(message),
-      mistake: onMistake,
-      stopped: (reason) => {
-        stopPractice();
-        setStatus(reason, true);
+    practice = new Practice(
+      engine,
+      chapters,
+      {
+        status: (message) => setStatus(message),
+        mistake: onMistake,
+        stopped: (reason) => {
+          stopPractice();
+          setStatus(reason, true);
+        },
       },
-    });
-    if (!SPEECH_SUPPORTED) {
-      ui.practice.disabled = true;
-      ui.practice.title = SPEECH_UNSUPPORTED_REASON;
-    }
+      () => settings.recogniser,
+    );
+    syncReciteButton();
     bindControls();
     void keepScreenAwake();
     document.addEventListener('visibilitychange', () => void keepScreenAwake());

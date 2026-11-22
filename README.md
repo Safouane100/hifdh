@@ -51,7 +51,9 @@ Press **P** (or **🎙 Recite**) and recite aloud from the ayah under the dot, o
 - On a touch screen, **💡 Hint** appears in the bottom bar while reciting, swiping left / right does what → / ← do, dragging up or down recites again from the ayah of the line you land on, holding a word lets you recite again from its ayah, and a tap pauses listening.
 - Settings can show upcoming words faintly instead of hiding them.
 
-Limits worth knowing: this uses the browser's speech recognition in Arabic (Chrome and Edge send audio to Google's speech service, Safari uses Apple's; Firefox has none), so it needs a microphone and a connection. It checks **words** — skipped, swapped or different words — not **tajweed** (a short madd or missing ghunnah still sounds like the right word), and the recogniser can mishear, so treat a flag as "check this word" rather than a verdict. Words must match exactly up to 7 letters, since one letter is often the whole difference (لليسرى / للعسرى).
+Limits worth knowing: by default this uses the browser's speech recognition in Arabic (Chrome and Edge send audio to Google's speech service, Safari uses Apple's; Firefox has none), so it needs a microphone and a connection. It checks **words** — skipped, swapped or different words — not **tajweed** (a short madd or missing ghunnah still sounds like the right word), and the recogniser can mishear, so treat a flag as "check this word" rather than a verdict. Words must match exactly up to 7 letters, since one letter is often the whole difference (لليسرى / للعسرى).
+
+**Tilawa on this device** (Settings › Reciting: follow my voice with) uses [Tilawa](https://github.com/yazinsai/tilawa) instead: a speech model trained on Quran recitation that runs in the browser, follows you word by word and judges mistakes itself (wrong, skipped and extra words, and skipped passages, shown once it is sure). Audio never leaves the device, and it works in Firefox too. The model downloads once from tilawa.dev (68 MB, or 25 MB on phones and low-memory devices) and is then kept in the browser's cache. It is a preview release, untested by its authors on phones, so the browser's recognition stays the default. Like the browser's, it doesn't judge tajweed. It has no "Heard: …" line: the status line shows the download, then "Listening".
 
 If reciting doesn't respond, read the status line at the bottom right:
 
@@ -70,5 +72,6 @@ If reciting doesn't respond, read the status line at the bottom right:
 - `src/main.ts` — controls, settings (saved in `localStorage`), per-frame rendering.
 - `src/touch.ts` — recognises taps, long-presses, swipes, vertical drags, two-finger swipes and pinches on the page; `main.ts` maps them to actions.
 - `src/recite.ts` — normalises Arabic, joins the recogniser's results into one transcript (Chrome on Android repeats earlier speech in every result), and aligns it with the expected words. `src/recite.test.ts` covers the joining.
+- `src/tilawa.ts` — the Tilawa option: loads the SDK and model on first use, keeps the microphone open and feeds one memorization session per surah, starting a new one on every restart.
 - `src/listener.ts` — the browser speech-recognition session, restarted as needed.
 - `src/practice.ts` — reciting mode: follows the voice, hides upcoming words, reports mistakes.
