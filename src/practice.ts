@@ -35,6 +35,10 @@ const orderOfKey = (key: string) => {
 /** An Arabic letter: what separates a word from a pause mark like ۖ, which quran.com writes after a space. */
 const ARABIC_LETTER = /[\u0621-\u064A\u0671-\u06D3]/;
 
+// With Tilawa, a jump of at least this many words when the tracker picks the
+// reciter up again counts as a skip.
+const SKIP_MIN_WORDS = 3;
+
 /**
  * Recitation practice: the reciter recites from memory, the page follows their
  * voice, words not yet recited stay hidden, and skipped or different words are
@@ -353,7 +357,16 @@ export class Practice {
     const i = this.tanzilIndex.get(`${word.surah}:${word.ayah}:${word.word}`);
     if (i === undefined || i < this.base) return;
     const start = this.tanzilIndex.get(`${from.surah}:${from.ayah}:${from.word}`);
-    if (start !== undefined && start >= this.base) this.resumed.add(start);
+    if (start !== undefined && start >= this.base) {
+      this.resumed.add(start);
+      // The tracker picked the reciter up again well past where they were: the
+      // words in between were skipped, whether or not Tilawa's checker says so
+      // (it often leaves a skipped ayah "uncertain"). Shorter gaps are the
+      // tracker's own jitter; single omitted words come from the checker.
+      if (start - this.cursor >= SKIP_MIN_WORDS) {
+        this.judge(Array.from({ length: start - this.cursor }, (_, k) => this.cursor + k), 'missed');
+      }
+    }
     this.cursor = this.shown = Math.max(this.cursor, i + 1);
     // The surah's last word, with more to recite after it: a session covers one
     // surah, so listening carries on in a new one for the next.
@@ -366,9 +379,15 @@ export class Practice {
     void this.follow();
   }
 
-  /** Tilawa's verdict on a possible mistake; only confirmed ones count, as it advises. */
+  /**
+   * Tilawa's verdict on a possible mistake. Confirmed ones count, as it
+   * advises, and so does a skipped passage it left uncertain once the reciter
+   * has clearly carried on after it: missing a skip is worse than a doubtful flag.
+   */
   private onChecker(e: CheckerEvent): void {
-    if (!this.active || e.state !== 'confirmed') return;
+    if (!this.active) return;
+    const uncertainSkip = e.state === 'uncertain' && e.errorClass === 'skipped_passage';
+    if (e.state !== 'confirmed' && !uncertainSkip) return;
     const at = this.tanzilIndex.get(`${e.location.surah}:${e.location.ayah}:${e.location.word}`);
     if (at === undefined) return;
     switch (e.errorClass) {
@@ -380,10 +399,10 @@ export class Practice {
         break;
       case 'skipped_passage': {
         // From the first skipped word up to where the reciter picked up again.
-        const picked = Math.min(...[...this.resumed].filter((i) => i > at), this.cursor);
-        const skipped = [at];
-        for (let i = at + 1; i < picked; i++) skipped.push(i);
-        this.judge(skipped, 'missed');
+        const pickedUp = [...this.resumed].filter((i) => i > at);
+        if (uncertainSkip && pickedUp.length === 0) break;
+        const end = Math.min(...pickedUp, this.cursor);
+        this.judge(Array.from({ length: Math.max(1, end - at) }, (_, k) => at + k), 'missed');
         break;
       }
       case 'added_word':

@@ -59,9 +59,17 @@ function describe(p: LoadProgress): string | undefined {
   return p.stage === 'warmup' ? 'Preparing the speech model…' : undefined;
 }
 
+// iOS kills a tab that goes over its memory cap, so Tilawa keeps iPhones and
+// iPads on its 25 MB "lite" model. Everywhere else this asks for the 68 MB
+// "full" model, which Tilawa would otherwise also skip on most phones: in a
+// test on al-Afasy's 92:17 with ٱلْأَشْقَى spliced in for ٱلْأَتْقَى, full
+// flagged the word and lite reported nothing at all.
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
 function loadModel(status: (message: string) => void): Promise<Tilawa> {
   model ??= import('@tilawa/core/web').then(({ createTilawa }) =>
     createTilawa({
+      tier: IOS ? 'auto' : 'full',
       onProgress: (p) => {
         const message = describe(p);
         if (message) status(message);

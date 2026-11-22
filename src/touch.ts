@@ -1,21 +1,21 @@
-// Touch gestures on the mushaf: tap, long-press, sideways swipe, vertical drag,
-// two-finger sideways swipe and pinch. Mouse input keeps its own click and
-// hover handling in main.ts.
+// Touch gestures on the mushaf: tap, long-press, sideways flick, drag in any
+// direction, two-finger sideways swipe and pinch. Mouse input keeps its own
+// click and hover handling in main.ts.
 
 export interface Gestures {
   tap(): void;
   /** A finger held still on (x, y). */
   longPress(x: number, y: number): void;
-  /** `1` for a swipe to the left (forward, like the › buttons), `-1` for one to the right. */
+  /** A quick sideways flick: `1` to the left (forward, like the › buttons), `-1` to the right. */
   swipe(dir: 1 | -1): void;
   /** Two fingers swiped sideways together; same directions as `swipe`. */
   swipe2(dir: 1 | -1): void;
-  /** One finger started moving mostly up or down. */
+  /** One finger started moving up or down, or sideways more slowly than a flick. */
   dragStart(): void;
-  /** Vertical distance the finger has moved since it went down, in px (down is positive). */
-  drag(dy: number): void;
-  /** The finger lifted; `velocity` is its vertical speed just before, in px/ms (down is positive). */
-  dragEnd(velocity: number): void;
+  /** Distance the finger has moved since it went down, in px (right and down are positive). */
+  drag(dx: number, dy: number): void;
+  /** The finger lifted; `vx`, `vy` are its speed just before, in px/ms (right and down are positive). */
+  dragEnd(vx: number, vy: number): void;
   pinchStart(): void;
   /** Distance between the two fingers relative to the start of the pinch. */
   pinch(ratio: number): void;
@@ -26,6 +26,10 @@ const MOVE_SLOP_PX = 10;
 const LONG_PRESS_MS = 500;
 const SWIPE_MIN_PX = 50;
 const SWIPE_MAX_MS = 800;
+// Moving sideways, a flick covers this far within this long of starting to
+// move; anything slower is a drag that the page follows.
+const FLICK_PX = 40;
+const FLICK_MS = 100;
 // Two fingers down are a pinch once their distance changes by this fraction,
 // and a swipe once they have moved this far together without it changing.
 const PINCH_MIN_CHANGE = 0.12;
@@ -35,12 +39,13 @@ const VELOCITY_WINDOW_MS = 100;
 
 /**
  * What the fingers down are doing: `one` is a single finger that may still turn
- * into a tap, swipe, long-press or drag; `two` is two fingers that may still
- * turn into a pinch or a two-finger swipe; `done` ignores everything until all
- * fingers have lifted (a long-press or two-finger swipe happened, or a third
- * finger came down).
+ * into a tap, flick, long-press or drag; `flick` is one moving sideways too fast
+ * for a drag, a swipe if it goes far enough; `two` is two fingers that may
+ * still turn into a pinch or a two-finger swipe; `done` ignores everything
+ * until all fingers have lifted (a long-press or two-finger swipe happened, or
+ * a third finger came down).
  */
-type Mode = 'one' | 'drag' | 'two' | 'pinch' | 'done';
+type Mode = 'one' | 'flick' | 'drag' | 'two' | 'pinch' | 'done';
 
 /** Recognise gestures made with fingers (or a pen) on `el`, which needs `touch-action: none`. */
 export function bindGestures(el: HTMLElement, on: Gestures): void {
@@ -50,8 +55,10 @@ export function bindGestures(el: HTMLElement, on: Gestures): void {
   let primary = -1;
   let start = { x: 0, y: 0, t: 0 };
   let pressTimer = 0;
-  /** The first finger's recent vertical positions, for the release speed of a drag. */
-  let samples: { t: number; y: number }[] = [];
+  /** The first finger's recent positions, for the release speed of a drag. */
+  let samples: { t: number; x: number; y: number }[] = [];
+  /** When the first finger started to move, as opposed to resting where it went down; 0 until then. */
+  let movedAt = 0;
   /** Finger distance and midpoint when the second finger went down. */
   let twoStart = { spread: 1, x: 0, y: 0 };
   /** Finger distance when the pinch began. */
@@ -62,10 +69,12 @@ export function bindGestures(el: HTMLElement, on: Gestures): void {
     return { spread: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   };
 
-  /** Vertical speed over the last stretch before lifting at (`t`, `y`); 0 if the finger had stopped. */
-  const velocity = (t: number, y: number) => {
-    const from = samples.find((s) => s.t >= t - VELOCITY_WINDOW_MS);
-    return from && t > from.t ? (y - from.y) / (t - from.t) : 0;
+  /** Speed over the last stretch before lifting at `e`; 0 if the finger had stopped. */
+  const velocity = (e: PointerEvent) => {
+    const from = samples.find((s) => s.t >= e.timeStamp - VELOCITY_WINDOW_MS);
+    if (!from || e.timeStamp <= from.t) return { x: 0, y: 0 };
+    const dt = e.timeStamp - from.t;
+    return { x: (e.clientX - from.x) / dt, y: (e.clientY - from.y) / dt };
   };
 
   el.addEventListener('pointerdown', (e) => {
@@ -75,7 +84,8 @@ export function bindGestures(el: HTMLElement, on: Gestures): void {
       mode = 'one';
       primary = e.pointerId;
       start = { x: e.clientX, y: e.clientY, t: e.timeStamp };
-      samples = [{ t: e.timeStamp, y: e.clientY }];
+      samples = [{ t: e.timeStamp, x: e.clientX, y: e.clientY }];
+      movedAt = 0;
       pressTimer = window.setTimeout(() => {
         if (mode !== 'one') return;
         mode = 'done';
@@ -119,19 +129,26 @@ export function bindGestures(el: HTMLElement, on: Gestures): void {
     if (e.pointerId !== primary) return;
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
-    if (mode === 'one' && Math.hypot(dx, dy) > MOVE_SLOP_PX) {
-      clearTimeout(pressTimer);
-      // Mostly vertical from the start: a drag. Otherwise it may still be a swipe, decided on lifting.
-      if (Math.abs(dy) > Math.abs(dx)) {
-        mode = 'drag';
-        on.dragStart();
+    if (mode === 'one' || mode === 'drag') {
+      samples.push({ t: e.timeStamp, x: e.clientX, y: e.clientY });
+      if (samples.length > 20) samples.shift();
+    }
+    if (mode === 'one') {
+      const distance = Math.hypot(dx, dy);
+      // Half a frame before the first movement seen, so a pause before a flick doesn't count.
+      if (!movedAt && distance > 2) movedAt = e.timeStamp - 8;
+      if (distance > MOVE_SLOP_PX) {
+        clearTimeout(pressTimer);
+        const moving = e.timeStamp - movedAt;
+        // Up or down is always a drag. Sideways, a flick steps an ayah and a
+        // slower movement drags; until that is clear, nothing moves.
+        if (Math.abs(dy) > Math.abs(dx) || moving > FLICK_MS) {
+          mode = 'drag';
+          on.dragStart();
+        } else if (distance >= FLICK_PX) mode = 'flick';
       }
     }
-    if (mode === 'drag') {
-      samples.push({ t: e.timeStamp, y: e.clientY });
-      if (samples.length > 20) samples.shift();
-      on.drag(dy);
-    }
+    if (mode === 'drag') on.drag(dx, dy);
   });
 
   const lift = (e: PointerEvent) => {
@@ -141,11 +158,12 @@ export function bindGestures(el: HTMLElement, on: Gestures): void {
       on.pinchEnd();
     } else if (mode === 'drag' && e.pointerId === primary) {
       mode = 'done';
-      on.dragEnd(e.type === 'pointercancel' ? 0 : velocity(e.timeStamp, e.clientY));
+      const v = e.type === 'pointercancel' ? { x: 0, y: 0 } : velocity(e);
+      on.dragEnd(v.x, v.y);
     } else if (mode === 'two') mode = 'done';
     if (fingers.size > 0) return;
     clearTimeout(pressTimer);
-    if (mode !== 'one' || e.type === 'pointercancel') return;
+    if ((mode !== 'one' && mode !== 'flick') || e.type === 'pointercancel') return;
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
     if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > 1.5 * Math.abs(dy) && e.timeStamp - start.t <= SWIPE_MAX_MS) {

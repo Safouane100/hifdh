@@ -30,6 +30,8 @@ interface Settings {
   autohide: boolean;
   /** Play a tone when a recitation mistake is heard. */
   beep: boolean;
+  /** Vibrate when a recitation mistake is heard, in a pattern per kind of mistake. */
+  vibrate: boolean;
   /** While reciting, show upcoming words faintly instead of hiding them. */
   peek: boolean;
   /** What follows a recitation: the browser's speech service, or Tilawa's model on the device. */
@@ -57,6 +59,7 @@ const DEFAULTS: Settings = {
   vignette: false,
   autohide: true,
   beep: true,
+  vibrate: true,
   peek: false,
   recogniser: 'browser',
   colors: {},
@@ -127,6 +130,7 @@ const ui = {
   vignette: $<HTMLInputElement>('vignette-on'),
   autohide: $<HTMLInputElement>('autohide'),
   beep: $<HTMLInputElement>('beep'),
+  vibrate: $<HTMLInputElement>('vibrate'),
   peek: $<HTMLInputElement>('peek'),
   recogniser: $<HTMLSelectElement>('recogniser'),
   practice: $<HTMLButtonElement>('practice'),
@@ -317,17 +321,17 @@ function closeWordMenu(): void {
   ui.wordMenu.hidden = true;
 }
 
-// --- Vertical drag: move the page under the dot -------------------------------
+// --- Drag: move the page under the dot ------------------------------------------
 
 /**
- * A drag in progress: the page it is on, the dot's x and the page y under the
- * dot when it began (`base`, shifted by a page height each time the drag
- * crosses onto another page), and the finger's vertical movement so far.
+ * A drag in progress: the page it is on, the page point under the dot when it
+ * began (`base`; its y shifts by a page height each time the drag crosses onto
+ * another page), and the finger's movement so far.
  */
 interface Drag {
   page: number;
-  x: number;
-  base: number;
+  base: Point;
+  dx: number;
   dy: number;
   wasPlaying: boolean;
   /** The page the drag crossed onto, while it loads. */
@@ -339,8 +343,11 @@ let drag: Drag | undefined;
 // time, up to a quarter of the screen height (half a page at the lowest zoom).
 const FLING_MS = 100;
 
-/** Page y under the dot: the finger moving down pulls the page down, so the dot goes up it. */
-const dragY = (d: Drag) => d.base - d.dy / (lastScale || 1);
+/** Page point under the dot: the page follows the finger, so the dot moves the other way across it. */
+const dragPoint = (d: Drag): Point => ({
+  x: d.base.x - d.dx / (lastScale || 1),
+  y: d.base.y - d.dy / (lastScale || 1),
+});
 
 function startDrag(): void {
   closeWordMenu();
@@ -350,43 +357,45 @@ function startDrag(): void {
   if (practice.listening) practice.toggleListening();
   const wasPlaying = engine.playing;
   engine.audio.pause();
-  drag = { page: engine.page.page, x: focus.x, base: focus.y, dy: 0, wasPlaying };
+  drag = { page: engine.page.page, base: { ...focus }, dx: 0, dy: 0, wasPlaying };
 }
 
 /** Follow the finger; past the first or last line, carry on into the neighbouring page. */
-function moveDrag(dy: number): void {
+function moveDrag(dx: number, dy: number): void {
   const d = drag;
   const page = engine.page;
   if (!d) return;
+  d.dx = dx;
   d.dy = dy;
   if (page?.page !== d.page) return;
   const { top, bottom } = page.lineSpan;
-  const y = dragY(d);
+  const { y } = dragPoint(d);
   if (y > bottom && d.page < PAGE_COUNT) {
     d.page++;
-    d.base -= bottom - top;
+    d.base.y -= bottom - top;
   } else if (y < top && d.page > 1) {
     d.page--;
-    d.base += bottom - top;
+    d.base.y += bottom - top;
   } else return;
   d.loading = engine.open(d.page);
 }
 
-/** The first word of the line nearest page y `y`. */
-function lineStartAt(page: MushafPage, y: number): WordRef {
+/** The word under page point `at`: on the nearest line, the one spanning its x, or else the closest. */
+function wordUnderDot(page: MushafPage, at: Point): WordRef {
   let nearest = page.firstWord;
   for (const ref of page.words.values()) {
-    if (ref.kind === 'word' && Math.abs(ref.box.cy - y) < Math.abs(nearest.box.cy - y)) nearest = ref;
+    if (ref.kind === 'word' && Math.abs(ref.box.cy - at.y) < Math.abs(nearest.box.cy - at.y)) nearest = ref;
   }
-  let first = nearest;
+  const gap = (ref: WordRef) => Math.max(ref.box.l - at.x, at.x - ref.box.r, 0);
+  let best = nearest;
   for (const ref of page.words.values()) {
-    if (ref.kind === 'word' && ref.line === nearest.line && ref.order < first.order) first = ref;
+    if (ref.kind === 'word' && ref.line === nearest.line && gap(ref) < gap(best)) best = ref;
   }
-  return first;
+  return best;
 }
 
-/** Land on the start of the line under the dot (after a flick's extra distance) and carry on from there. */
-async function endDrag(velocity: number): Promise<void> {
+/** Land on the word under the dot (after a flick's extra distance) and carry on from there. */
+async function endDrag(vx: number, vy: number): Promise<void> {
   const d = drag;
   if (!d) return;
   try {
@@ -395,16 +404,18 @@ async function endDrag(velocity: number): Promise<void> {
     if (drag !== d || !page) return;
     const { top, bottom } = page.lineSpan;
     const maxFling = window.innerHeight / 4;
-    const fling = Math.max(-maxFling, Math.min(maxFling, velocity * FLING_MS));
-    let y = dragY(d) - fling / (lastScale || 1);
+    const fling = (v: number) => Math.max(-maxFling, Math.min(maxFling, v * FLING_MS)) / (lastScale || 1);
+    const at = dragPoint(d);
+    at.x -= fling(vx);
+    at.y -= fling(vy);
     let target = d.page;
-    for (; y > bottom && target < PAGE_COUNT; target++) {
-      y -= bottom - top;
-      d.base -= bottom - top;
+    for (; at.y > bottom && target < PAGE_COUNT; target++) {
+      at.y -= bottom - top;
+      d.base.y -= bottom - top;
     }
-    for (; y < top && target > 1; target--) {
-      y += bottom - top;
-      d.base += bottom - top;
+    for (; at.y < top && target > 1; target--) {
+      at.y += bottom - top;
+      d.base.y += bottom - top;
     }
     if (target !== d.page) {
       d.page = target;
@@ -412,7 +423,7 @@ async function endDrag(velocity: number): Promise<void> {
       page = engine.page;
       if (drag !== d || page?.page !== target) return;
     }
-    const key = lineStartAt(page, y).key;
+    const key = wordUnderDot(page, at).key;
     if (practice.active) {
       // Reciting restarts at an ayah's start, which may be on the page before.
       const verseKey = key.slice(0, key.lastIndexOf(':'));
@@ -437,7 +448,7 @@ function renderFrame(now: number): void {
   if (drag && focus) {
     // The page follows the finger. While a page the drag crossed onto is still
     // loading, hold still rather than move the old page by the new one's offset.
-    if (engine.page?.page === drag.page) focus = { x: drag.x, y: dragY(drag) };
+    if (engine.page?.page === drag.page) focus = dragPoint(drag);
   } else if (!focus || frame.snap || settings.smoothing === 0) {
     focus = { ...target };
   } else {
@@ -587,10 +598,16 @@ function stopPractice(): void {
   setStatus('');
 }
 
+// Told apart without looking: one long buzz for a different word, two short
+// ones for a skip, one short tap for an extra word.
+const VIBRATION = { wrong: [250], missed: [90, 90, 90], added: [60] };
+
 function onMistake(kind: 'missed' | 'wrong' | 'added', words: string[]): void {
   const label = { missed: 'Skipped', wrong: 'Check', added: 'Extra word near' }[kind];
   flash(`${label}: ${words.join(' ')}`, 1800);
   if (settings.beep) beep();
+  // Android only: iOS browsers have no vibration API.
+  if (settings.vibrate) navigator.vibrate?.(VIBRATION[kind]);
 }
 
 /** Why reciting can't start with the chosen recogniser, if it can't. */
@@ -760,7 +777,10 @@ function bindControls(): void {
     applyLook();
     void engine.reconfigure({ script: scriptOf(settings.tajweed) });
   });
-  const bindCheck = (input: HTMLInputElement, key: 'highlight' | 'ghost' | 'vignette' | 'autohide' | 'beep' | 'peek') => {
+  const bindCheck = (
+    input: HTMLInputElement,
+    key: 'highlight' | 'ghost' | 'vignette' | 'autohide' | 'beep' | 'vibrate' | 'peek',
+  ) => {
     input.addEventListener('change', () => {
       settings[key] = input.checked;
       save();
@@ -772,6 +792,7 @@ function bindControls(): void {
   bindCheck(ui.vignette, 'vignette');
   bindCheck(ui.autohide, 'autohide');
   bindCheck(ui.beep, 'beep');
+  bindCheck(ui.vibrate, 'vibrate');
   bindCheck(ui.peek, 'peek');
   ui.recogniser.addEventListener('change', () => {
     settings.recogniser = ui.recogniser.value as Recogniser;
@@ -836,7 +857,7 @@ function bindControls(): void {
     },
     dragStart: startDrag,
     drag: moveDrag,
-    dragEnd: (velocity) => void endDrag(velocity),
+    dragEnd: (vx, vy) => void endDrag(vx, vy),
     pinchStart: () => {
       closeWordMenu();
       pinchFrom = settings.magnify;
@@ -969,6 +990,7 @@ function syncInputs(): void {
   ui.vignette.checked = settings.vignette;
   ui.autohide.checked = settings.autohide;
   ui.beep.checked = settings.beep;
+  ui.vibrate.checked = settings.vibrate;
   ui.peek.checked = settings.peek;
   ui.recogniser.value = settings.recogniser;
 }

@@ -27,9 +27,9 @@
         <p class="hint-keys"><kbd>Space</kbd> play / pause · <kbd>→</kbd> next ayah · <kbd>←</kbd> start of ayah / previous ayah · <kbd>Shift</kbd>+<kbd>→</kbd> <kbd>←</kbd> next / previous surah · <kbd>&lt;</kbd> <kbd>&gt;</kbd> slower / faster · <kbd>PgDn</kbd> <kbd>PgUp</kbd> turn page · <kbd>+</kbd> <kbd>−</kbd> zoom · click a word to start there</p>
         <p class="hint-keys">Loop: <kbd>A</kbd> / <kbd>B</kbd> set the loop start / end at the current ayah (press again to remove) · <kbd>Shift</kbd>+click a word sets A, <kbd>Alt</kbd>+click sets B · <kbd>C</kbd> clears the loop</p>
         <p class="hint-keys">Recite from memory: <kbd>P</kbd> starts listening from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · <kbd>H</kbd> shows the next word · <kbd>←</kbd> recite this ayah again · <kbd>Space</kbd> pause · <kbd>Esc</kbd> stop</p>
-        <p class="hint-touch">Tap the page to play / pause · swipe left for the next ayah, right for the start of this one / the previous one · drag up or down to move through the page line by line · swipe with two fingers for the next / previous surah · pinch to zoom</p>
+        <p class="hint-touch">Tap the page to play / pause · flick left for the next ayah, right for the start of this one / the previous one · drag slowly in any direction to move the page and carry on from the word under the dot · swipe with two fingers for the next / previous surah · pinch to zoom</p>
         <p class="hint-touch">Hold a word for its meaning, to play from it, or to make it the loop's start (A) or end (B)</p>
-        <p class="hint-touch">Recite from memory: 🎙 Recite listens from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · 💡 Hint shows the next word · swipe right to recite this ayah again · drag to recite from another ayah · tap to pause</p>
+        <p class="hint-touch">Recite from memory: 🎙 Recite listens from the ayah under the dot (or the A-B loop) · upcoming words stay hidden · 💡 Hint shows the next word · flick right to recite this ayah again · drag to recite from another ayah · tap to pause</p>
       </div>
     </main>
 
@@ -181,6 +181,10 @@
       <label class="row check">
         <input id="beep" type="checkbox" />
         <span>Reciting: play a soft tone when a mistake is heard</span>
+      </label>
+      <label class="row check">
+        <input id="vibrate" type="checkbox" />
+        <span>Reciting: vibrate when a mistake is heard <small>(long buzz: different word · two short: skipped · one tap: extra word; Android only)</small></span>
       </label>
       <label class="row check">
         <input id="peek" type="checkbox" />

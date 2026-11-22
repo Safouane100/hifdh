@@ -68,6 +68,10 @@ const SKIP_AHEAD = 3;
 const EXTRA_AHEAD = 2;
 // How far back a repeated phrase may start.
 const REPEAT_BACK = 8;
+// A longer skip, a whole ayah or more, is looked for this far ahead, and only
+// believed when this many heard words in a row line up there.
+const LONG_SKIP_AHEAD = 120;
+const LONG_SKIP_CONFIRM = 3;
 
 /** Number of heard words from `i` that re-say expected words ending just before `j`, or 0. */
 function repetitionLength(expected: string[], j: number, heard: string[], i: number): number {
@@ -79,6 +83,23 @@ function repetitionLength(expected: string[], j: number, heard: string[], i: num
     if (n >= 2 || reachesEndOfHeard) return n;
   }
   return 0;
+}
+
+/**
+ * Where the reciter picked up again after skipping more than SKIP_AHEAD words:
+ * the expected index where heard words from `i` line up, `'pending'` when
+ * they start to but too few have been heard to be sure, or undefined.
+ */
+function longSkipTarget(expected: string[], j: number, heard: string[], i: number): number | 'pending' | undefined {
+  let pending = false;
+  for (let p = j + SKIP_AHEAD + 1; p <= j + LONG_SKIP_AHEAD && p < expected.length; p++) {
+    if (!sameWord(expected[p], heard[i])) continue;
+    let n = 1;
+    while (n < LONG_SKIP_CONFIRM && i + n < heard.length && p + n < expected.length && sameWord(expected[p + n], heard[i + n])) n++;
+    if (n === LONG_SKIP_CONFIRM) return p;
+    if (i + n === heard.length) pending = true;
+  }
+  return pending ? 'pending' : undefined;
 }
 
 /**
@@ -150,6 +171,26 @@ export function align(expected: string[], from: number, heard: string[]): Alignm
     }
     if (extra) {
       i += extra;
+      continue;
+    }
+    // Reciter skipped a whole ayah or more. Two ayat often open alike (67:2 and
+    // 67:3 both with الذي خلق), so words just matched before the skip that also
+    // precede where they picked up belong there instead: the skip starts earlier.
+    const target = longSkipTarget(expected, j, heard, i);
+    if (target === 'pending') break;
+    if (target !== undefined) {
+      let back = 0;
+      while (
+        j - back > from &&
+        i - back > 0 &&
+        statuses.get(j - back - 1) === 'ok' &&
+        sameWord(expected[target - back - 1], heard[i - back - 1])
+      ) {
+        back++;
+      }
+      for (let k = j - back; k < target - back; k++) statuses.set(k, 'missed');
+      for (let k = target - back; k < target; k++) statuses.set(k, 'ok');
+      j = target;
       continue;
     }
     // A different word was said in this word's place, judged once the reciter
