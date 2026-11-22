@@ -572,7 +572,7 @@ export class Engine {
   }
 
   /** Page on which an ayah starts; neighbouring ayat are always on the same or an adjacent page. */
-  private async pageOfVerse(verseKey: string, near: number): Promise<number> {
+  async pageOfVerse(verseKey: string, near: number): Promise<number> {
     for (const p of [near, near + 1, near - 1, near + 2, near - 2]) {
       if (p < 1 || p > PAGE_COUNT) continue;
       const page = await buildPage(p, this.opts.script, this.chapters);

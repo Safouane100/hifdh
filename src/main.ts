@@ -312,12 +312,128 @@ function closeWordMenu(): void {
   ui.wordMenu.hidden = true;
 }
 
+// --- Vertical drag: move the page under the dot -------------------------------
+
+/**
+ * A drag in progress: the page it is on, the dot's x and the page y under the
+ * dot when it began (`base`, shifted by a page height each time the drag
+ * crosses onto another page), and the finger's vertical movement so far.
+ */
+interface Drag {
+  page: number;
+  x: number;
+  base: number;
+  dy: number;
+  wasPlaying: boolean;
+  /** The page the drag crossed onto, while it loads. */
+  loading?: Promise<void>;
+}
+let drag: Drag | undefined;
+
+// A flick carries on as far as the finger would have gone in this much more
+// time, up to a quarter of the screen height (half a page at the lowest zoom).
+const FLING_MS = 100;
+
+/** Page y under the dot: the finger moving down pulls the page down, so the dot goes up it. */
+const dragY = (d: Drag) => d.base - d.dy / (lastScale || 1);
+
+function startDrag(): void {
+  closeWordMenu();
+  if (!engine.page || !focus) return;
+  // Hearing the reciter while the dot is somewhere else would be confusing;
+  // reciting or playing resumes from wherever the drag ends.
+  if (practice.listening) practice.toggleListening();
+  const wasPlaying = engine.playing;
+  engine.audio.pause();
+  drag = { page: engine.page.page, x: focus.x, base: focus.y, dy: 0, wasPlaying };
+}
+
+/** Follow the finger; past the first or last line, carry on into the neighbouring page. */
+function moveDrag(dy: number): void {
+  const d = drag;
+  const page = engine.page;
+  if (!d) return;
+  d.dy = dy;
+  if (page?.page !== d.page) return;
+  const { top, bottom } = page.lineSpan;
+  const y = dragY(d);
+  if (y > bottom && d.page < PAGE_COUNT) {
+    d.page++;
+    d.base -= bottom - top;
+  } else if (y < top && d.page > 1) {
+    d.page--;
+    d.base += bottom - top;
+  } else return;
+  d.loading = engine.open(d.page);
+}
+
+/** The first word of the line nearest page y `y`. */
+function lineStartAt(page: MushafPage, y: number): WordRef {
+  let nearest = page.firstWord;
+  for (const ref of page.words.values()) {
+    if (ref.kind === 'word' && Math.abs(ref.box.cy - y) < Math.abs(nearest.box.cy - y)) nearest = ref;
+  }
+  let first = nearest;
+  for (const ref of page.words.values()) {
+    if (ref.kind === 'word' && ref.line === nearest.line && ref.order < first.order) first = ref;
+  }
+  return first;
+}
+
+/** Land on the start of the line under the dot (after a flick's extra distance) and carry on from there. */
+async function endDrag(velocity: number): Promise<void> {
+  const d = drag;
+  if (!d) return;
+  try {
+    await d.loading;
+    let page = engine.page;
+    if (drag !== d || !page) return;
+    const { top, bottom } = page.lineSpan;
+    const maxFling = window.innerHeight / 4;
+    const fling = Math.max(-maxFling, Math.min(maxFling, velocity * FLING_MS));
+    let y = dragY(d) - fling / (lastScale || 1);
+    let target = d.page;
+    for (; y > bottom && target < PAGE_COUNT; target++) {
+      y -= bottom - top;
+      d.base -= bottom - top;
+    }
+    for (; y < top && target > 1; target--) {
+      y += bottom - top;
+      d.base += bottom - top;
+    }
+    if (target !== d.page) {
+      d.page = target;
+      await engine.open(target);
+      page = engine.page;
+      if (drag !== d || page?.page !== target) return;
+    }
+    const key = lineStartAt(page, y).key;
+    if (practice.active) {
+      // Reciting restarts at an ayah's start, which may be on the page before.
+      const verseKey = key.slice(0, key.lastIndexOf(':'));
+      const point = { verseKey, page: await engine.pageOfVerse(verseKey, target) };
+      if (drag !== d) return;
+      drag = undefined;
+      await practice.restartAt(point);
+    } else {
+      drag = undefined;
+      await (d.wasPlaying ? engine.start(target, key) : engine.open(target, key));
+    }
+  } finally {
+    if (drag === d) drag = undefined;
+  }
+}
+
 function renderFrame(now: number): void {
   const dt = Math.min(now - lastFrame, 100);
   lastFrame = now;
   const frame = engine.frame();
   const target = frame.focus;
-  if (!focus || frame.snap || settings.smoothing === 0) {
+  if (drag && focus) {
+    // The page follows the finger. While a page the drag crossed onto is still
+    // loading, hold still rather than move the old page by the new one's offset.
+    if (engine.page?.page === drag.page) focus = { x: drag.x, y: dragY(drag) };
+  } else if (!focus || frame.snap || settings.smoothing === 0) {
     focus = { ...target };
   } else {
     const k = 1 - Math.exp(-dt / settings.smoothing);
@@ -688,6 +804,13 @@ function bindControls(): void {
       closeWordMenu();
       stepAyah(dir);
     },
+    swipe2: (dir) => {
+      closeWordMenu();
+      goToSurah(dir);
+    },
+    dragStart: startDrag,
+    drag: moveDrag,
+    dragEnd: (velocity) => void endDrag(velocity),
     pinchStart: () => {
       closeWordMenu();
       pinchFrom = settings.magnify;

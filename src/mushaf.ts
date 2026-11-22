@@ -92,6 +92,8 @@ export class MushafPage {
   readonly ghostOnLine = new Map<HTMLElement, HTMLElement>();
   readonly firstWord: WordRef;
   readonly lastOrder: number;
+  /** Top of the first line and bottom of the last, in unscaled page pixels. */
+  lineSpan = { top: 0, bottom: 0 };
   private fitted = false;
   readonly script: Script;
 
@@ -238,6 +240,11 @@ export class MushafPage {
       };
     };
     for (const ref of this.words.values()) ref.box = toBox(ref.el.getBoundingClientRect(), ref.line);
+    const lines = this.el.querySelectorAll<HTMLElement>('.line');
+    this.lineSpan = {
+      top: (lines[0].getBoundingClientRect().top - origin.top) / scale,
+      bottom: (lines[lines.length - 1].getBoundingClientRect().bottom - origin.top) / scale,
+    };
     for (const b of this.basmala.values()) {
       // Measure the glyph run rather than the full-width line box.
       const range = document.createRange();
